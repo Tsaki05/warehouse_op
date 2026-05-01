@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: magatzem_test
+          POSTGRES_USER: magatzem
+          POSTGRES_PASSWORD: magatzem
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements/development.txt
+
+      - name: Run tests
+        env:
+          DJANGO_SECRET_KEY: ci-secret-key
+          DJANGO_ENV: development
+          DB_NAME: magatzem_test
+          DB_USER: magatzem
+          DB_PASSWORD: magatzem
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_SCHEMA: public
+        run: |
+          cd backend
+          python manage.py test
