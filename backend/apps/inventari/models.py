@@ -121,8 +121,27 @@ class Producte(models.Model):
         primary_key=True
     )
     codi_proveidor = models.CharField(max_length=50)
-    estoc_total    = models.IntegerField(default=0, min_value=0)
-    preu           = models.DecimalField(max_digits=10, decimal_places=2, min_value=0)
+    estoc_total    = models.IntegerField(
+        default=0
+        validators=[
+            RegexValidator(
+                regex='^[0-9]+$',
+                message="L’estoc total ha de ser un número entero no negativo.",
+                code='invalid_number'
+            )
+        ]
+    )
+    preu           = models.DecimalField(
+        max_digits=10,
+        decimal_places=2, 
+        validators=[
+            RegexValidator(
+                regex='^\d+(\.\d{1,2})?$',
+                message='El preu ha de ser un número decimal i fins a dos decimals.',
+                code='invalid_price'
+            )
+        ]
+    )
     categoria      = models.CharField(max_length=6, choices=Mida.choices)
 
     class Meta:
@@ -134,6 +153,14 @@ class Producte(models.Model):
                 check=models.Q(id_producte__regex=r'^[a-zA-Z0-9]{12}$'),
                 name='longitud_exacta_12'
             )
+            models.CheckConstraint(
+                check=models.Q(estoc_total__gte=0),
+                name='estoc_total_no_negativo'
+            ),
+            models.CheckConstraint(
+                check=models.Q(preu__regex=r'^\d+(\.\d{1,2})?$'),
+                name='formato_precio_valido'
+            )
         ]
 
     def __str__(self):
@@ -144,7 +171,14 @@ class Lot(models.Model):
     ubicacio  = models.ForeignKey(Ubicacio, on_delete=models.RESTRICT, related_name='lots')
     producte  = models.ForeignKey(Producte, on_delete=models.RESTRICT, related_name='lots')
     superior  = models.ForeignKey(Treballador, on_delete=models.RESTRICT, related_name='lots')
-    quantitat = models.IntegerField(min_value=1)
+    quantitat = models.IntegerField(
+        validators=[
+            RegexValidator(
+                regex='^[1-9]+$',
+                message="La quantitat per lot ha de ser un número enter major a 0.",
+                code='invalid_quantity'
+            )
+    )
 
     class Meta:
         db_table = 'lot'
