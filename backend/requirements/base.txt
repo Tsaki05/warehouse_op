@@ -1,5 +1,5 @@
 Django==4.2
 djangorestframework==3.15
-psycopg2-binary==2.9.9
+psycopg2-binary>=2.9.10
 python-decouple==3.8
 faker==24.0.0

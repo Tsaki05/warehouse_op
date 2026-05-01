@@ -25,6 +25,17 @@ def codi(n, digits=False):
     return ''.join(random.choices(chars, k=n))
 
 
+# FIX: funcions helpers que faltaven
+def codi_alfanumeric(n):
+    return codi(n)
+
+def codi_numeric(n):
+    return codi(n, digits=True)
+
+def nif_fake():
+    return codi(8)
+
+
 def seed(
     n_magatzems=10,
     n_ubicacions_per_magatzem=50,
@@ -40,7 +51,8 @@ def seed(
     print("Generant magatzems...")
     magatzems = [Magatzem.objects.get_or_create(codi_magatzem=codi(8))[0] for _ in range(n_magatzems)]
 
-     print("Generant ubicacions...")
+    # FIX: indentació incorrecta (espai extra)
+    print("Generant ubicacions...")
     ubicacions = []
     for m in magatzems:
         for _ in range(n_ubicacions_per_magatzem):
@@ -51,7 +63,7 @@ def seed(
                 alcada=codi_alfanumeric(3),
             )
             ubicacions.append(u)
- 
+
     print("Generant treballadors...")
     superiors = []
     for _ in range(n_superiors):
@@ -61,14 +73,14 @@ def seed(
             superior=True,
         )
         superiors.append(t)
- 
+
     for _ in range(n_mossos):
         Treballador.objects.create(
             telefon=fake.phone_number()[:20],
             nom=fake.name(),
             superior=False,
         )
- 
+
     print("Generant productes...")
     productes = []
     for _ in range(n_productes):
@@ -80,7 +92,7 @@ def seed(
             categoria=random.choice(CATEGORIES),
         )
         productes.append(p)
- 
+
     print("Generant lots...")
     for _ in range(n_lots):
         Lot.objects.get_or_create(
@@ -91,7 +103,7 @@ def seed(
                 'quantitat': random.randint(1, 500),
             },
         )
- 
+
     print("Generant clients empresa...")
     clients_empresa = []
     for _ in range(n_empreses):
@@ -109,7 +121,7 @@ def seed(
             enviament=random.choice([True, False]),
         )
         clients_empresa.append(c)
- 
+
     print("Generant clients individuals...")
     clients_individual = []
     for _ in range(n_individuals):
@@ -123,9 +135,9 @@ def seed(
         )
         Individual.objects.create(client=c, telefon=fake.phone_number()[:20])
         clients_individual.append(c)
- 
+
     tots_clients = clients_empresa + clients_individual
- 
+
     print("Generant comandes...")
     comandes = []
     used_ids = set()
@@ -135,7 +147,7 @@ def seed(
         while id_comanda in used_ids:
             id_comanda = codi_alfanumeric(5)
         used_ids.add(id_comanda)
- 
+
         c = Comanda.objects.create(
             id_comanda=id_comanda,
             client=client,
@@ -155,7 +167,7 @@ def seed(
                 },
             )
         comandes.append(c)
- 
+
     print("Generant factures...")
     used_ids = set()
     for _ in range(n_factures):
@@ -163,19 +175,19 @@ def seed(
         comandes_client = [c for c in comandes if c.client_id == client.nif and c.factura is None]
         if not comandes_client:
             continue
- 
+
         id_factura = codi_alfanumeric(5)
         while id_factura in used_ids:
             id_factura = codi_alfanumeric(5)
         used_ids.add(id_factura)
- 
+
         # RS6: individuals -> exactament 1 comanda per factura
         if hasattr(client, 'empresa'):
             n = random.randint(1, min(5, len(comandes_client)))
             comandes_factura = random.sample(comandes_client, k=n)
         else:
             comandes_factura = [comandes_client[0]]
- 
+
         import_total = sum(c.import_total for c in comandes_factura)
         f = Factura.objects.create(
             id_factura=id_factura,
@@ -186,7 +198,7 @@ def seed(
         for c in comandes_factura:
             c.factura = f
             c.save(update_fields=['factura'])
- 
+
     print(f"""
 Dades generades correctament:
   Magatzems:    {Magatzem.objects.count()}
