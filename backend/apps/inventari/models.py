@@ -72,15 +72,15 @@ class Ubicacio(models.Model):
 
             models.CheckConstraint(
                 check=models.Q(passadis__regex=r'^[a-zA-Z0-9]{3}$'),
-                name='longitud_exacta_3'
+                name='passadis_longitud_exacta_3'
             ),
             models.CheckConstraint(
                 check=models.Q(estant__regex=r'^[a-zA-Z0-9]{3}$'),
-                name='longitud_exacta_3'
+                name='estant_longitud_exacta_3'
             ),
             models.CheckConstraint(
                 check=models.Q(alcada__regex=r'^[a-zA-Z0-9]{3}$'),
-                name='longitud_exacta_3'
+                name='alcada_longitud_exacta_3'
             )
         ]
 
@@ -115,7 +115,7 @@ class Producte(models.Model):
             RegexValidator(
                 regex='^[a-zA-Z0-9]{12}$',
                 message='El ID del producte ha de tenir exactament 12 caràcters.',
-                code='invalid_length'
+                code='id_producte_invalid_length'
             )
         ],
         primary_key=True
@@ -127,7 +127,7 @@ class Producte(models.Model):
             RegexValidator(
                 regex='^[0-9]+$',
                 message="L’estoc total ha de ser un número entero no negativo.",
-                code='invalid_number'
+                code='invalid_number_estoc_total'
             )
         ]
     )
@@ -138,7 +138,7 @@ class Producte(models.Model):
             RegexValidator(
                 regex='^\d+(\.\d{1,2})?$',
                 message='El preu ha de ser un número decimal i fins a dos decimals.',
-                code='invalid_price'
+                code='invalid_price_producte'
             )
         ]
     )
@@ -151,7 +151,7 @@ class Producte(models.Model):
         constraints = [
             models.CheckConstraint(
                 check=models.Q(id_producte__regex=r'^[a-zA-Z0-9]{12}$'),
-                name='longitud_exacta_12'
+                name='id_producte_longitud_exacta_12'
             ),
             models.CheckConstraint(
                 check=models.Q(estoc_total__gte=0),
@@ -159,7 +159,7 @@ class Producte(models.Model):
             ),
             models.CheckConstraint(
                 check=models.Q(preu__regex=r'^\d+(\.\d{1,2})?$'),
-                name='formato_precio_valido'
+                name='formato_precio_invalido'
             )
         ]
 
@@ -176,7 +176,7 @@ class Lot(models.Model):
             RegexValidator(
                 regex='^[1-9]+$',
                 message="La quantitat per lot ha de ser un número enter major a 0.",
-                code='invalid_quantity'
+                code='invalid_quantity_lot'
             )
         ]
     )

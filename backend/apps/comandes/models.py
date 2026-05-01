@@ -65,7 +65,7 @@ class Comanda(models.Model):
         constraints = [
             models.CheckConstraint(
                 check=models.Q(id_comanda__regex=r'^[a-zA-Z0-9]{5}$'),
-                name='longitud_exacta_5'
+                name='id_comanda_longitud_exacta_5'
             )
         ]
     def __str__(self):

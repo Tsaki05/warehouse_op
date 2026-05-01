@@ -24,7 +24,7 @@ class Client(models.Model):
         constraints = [
             models.CheckConstraint(
                 check=models.Q(nif__regex=r'^[a-zA-Z0-9]{8}$'),
-                name='longitud_exacta_8'
+                name='nif_longitud_exacta_8'
             )
         ]
 
