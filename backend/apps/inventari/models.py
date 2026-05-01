@@ -38,7 +38,7 @@ class Ubicacio(models.Model):
                 message='El passadís ha de tenir exactament 3 caràcters.',
                 code='invalid_length'
             )
-        ],
+        ]
     )
     estant    = models.CharField(
         validators=[
@@ -47,8 +47,7 @@ class Ubicacio(models.Model):
                 message='L’estant ha de tenir exactament 3 caràcters.',
                 code='invalid_length'
             )
-        ],
-        max_length=3, min_length=3
+        ]
     )
     alcada    = models.CharField(
         validators=[
@@ -57,8 +56,7 @@ class Ubicacio(models.Model):
                 message='L’alcada ha de tenir exactament 3 caràcters.',
                 code='invalid_length'
             )
-        ],
-        max_length=3, min_length=3
+        ]
     )
 
     class Meta:
