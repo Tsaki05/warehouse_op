@@ -75,7 +75,7 @@ class Comanda(models.Model):
 class Paquet(models.Model):
     comanda   = models.ForeignKey(Comanda, on_delete=models.CASCADE, related_name='paquets')
     producte  = models.ForeignKey(Producte, on_delete=models.PROTECT, related_name='paquets')
-    quantitat = models.IntegerField(check=quantitat!=0)
+    quantitat = models.IntegerField(check=models.Q(quantitat__gt=0))
     preu      = models.DecimalField(max_digits=10, decimal_places=2)
 
     class Meta:
