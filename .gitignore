@@ -52,3 +52,15 @@ htmlcov/
 
 # Migracions generades (opcional — alguns equips les commitegen)
 # backend/apps/*/migrations/
+
+
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.eslintcache
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Vite specific
+frontend/.vite/
