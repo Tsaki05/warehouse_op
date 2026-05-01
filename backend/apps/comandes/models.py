@@ -83,7 +83,6 @@ class Paquet(models.Model):
         verbose_name = 'Paquet'
         verbose_name_plural = 'Paquets'
         
-        class Meta:
         constraints = [
             models.UniqueConstraint(
                 fields=['comanda', 'producte'],
