@@ -152,7 +152,7 @@ class Producte(models.Model):
             models.CheckConstraint(
                 check=models.Q(id_producte__regex=r'^[a-zA-Z0-9]{12}$'),
                 name='longitud_exacta_12'
-            )
+            ),
             models.CheckConstraint(
                 check=models.Q(estoc_total__gte=0),
                 name='estoc_total_no_negativo'
