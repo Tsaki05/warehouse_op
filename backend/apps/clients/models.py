@@ -2,7 +2,7 @@ from django.db import models
 
 
 class Client(models.Model):
-    nif               = models.CharField(max_length=20, primary_key=True)
+    nif               = models.CharField(max_length=9, min_length=9,primary_key=True)
     nom               = models.CharField(max_length=100)
     correu_electronic = models.EmailField()
 
@@ -18,7 +18,7 @@ class Client(models.Model):
 class Empresa(models.Model):
     client    = models.OneToOneField(Client, on_delete=models.CASCADE, primary_key=True, related_name='empresa')
     adressa   = models.CharField(max_length=200)
-    enviament = models.CharField(max_length=50)
+    enviament = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'empresa'

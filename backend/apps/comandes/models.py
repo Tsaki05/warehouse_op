@@ -4,7 +4,7 @@ from apps.inventari.models import Producte
 
 
 class Factura(models.Model):
-    id_factura   = models.CharField(max_length=5, primary_key=True)
+    id_factura   = models.CharField(max_length=5, min_length=5, primary_key=True)
     client       = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='factures')
     import_total = models.DecimalField(max_digits=12, decimal_places=2)
     data         = models.DateField()
@@ -45,7 +45,7 @@ class Comanda(models.Model):
 class Paquet(models.Model):
     comanda   = models.ForeignKey(Comanda, on_delete=models.CASCADE, related_name='paquets')
     producte  = models.ForeignKey(Producte, on_delete=models.PROTECT, related_name='paquets')
-    quantitat = models.IntegerField()
+    quantitat = models.IntegerField(check=quantitat!=0)
     preu      = models.DecimalField(max_digits=10, decimal_places=2)
 
     class Meta:

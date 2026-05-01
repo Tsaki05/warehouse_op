@@ -2,7 +2,7 @@ from django.db import models
 
 
 class Magatzem(models.Model):
-    codi_magatzem = models.CharField(max_length=8, primary_key=True)
+    codi_magatzem = models.CharField(max_length=8, min_length=8, primary_key=True)
 
     class Meta:
         db_table = 'magatzem'
@@ -15,9 +15,9 @@ class Magatzem(models.Model):
 
 class Ubicacio(models.Model):
     magatzem  = models.ForeignKey(Magatzem, on_delete=models.CASCADE, related_name='ubicacions')
-    passadis  = models.CharField(max_length=3)
-    estant    = models.CharField(max_length=3)
-    alcada    = models.CharField(max_length=3)
+    passadis  = models.CharField(max_length=3, min_length=3)
+    estant    = models.CharField(max_length=3, min_length=3)
+    alcada    = models.CharField(max_length=3, min_length=3)
 
     class Meta:
         db_table = 'ubicacio'
@@ -78,8 +78,8 @@ class Producte(models.Model):
 
     id_producte    = models.CharField(max_length=12, primary_key=True)
     codi_proveidor = models.CharField(max_length=50)
-    estoc_total    = models.IntegerField(default=0)
-    preu           = models.DecimalField(max_digits=10, decimal_places=2)
+    estoc_total    = models.IntegerField(default=0, min_value=0)
+    preu           = models.DecimalField(max_digits=10, decimal_places=2, min_value=0)
     categoria      = models.CharField(max_length=6, choices=Mida.choices)
 
     class Meta:
@@ -95,7 +95,7 @@ class Lot(models.Model):
     ubicacio  = models.ForeignKey(Ubicacio, on_delete=models.CASCADE, related_name='lots')
     producte  = models.ForeignKey(Producte, on_delete=models.CASCADE, related_name='lots')
     superior  = models.ForeignKey(Superior, on_delete=models.CASCADE, related_name='lots')
-    quantitat = models.IntegerField()
+    quantitat = models.IntegerField(min_value=1)
 
     class Meta:
         db_table = 'lot'
