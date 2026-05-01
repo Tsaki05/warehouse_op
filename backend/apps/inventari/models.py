@@ -122,7 +122,7 @@ class Producte(models.Model):
     )
     codi_proveidor = models.CharField(max_length=50)
     estoc_total    = models.IntegerField(
-        default=0
+        default=0,
         validators=[
             RegexValidator(
                 regex='^[0-9]+$',
