@@ -17,11 +17,13 @@ jobs:
           POSTGRES_DB: magatzem_test
           POSTGRES_USER: magatzem
           POSTGRES_PASSWORD: magatzem
+        # Optimització de memòria per a Postgres en entorns de test
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          --tmpfs /var/lib/postgresql/data
         ports:
           - 5432:5432
 
@@ -32,9 +34,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          # OPTIMITZACIÓ 1: Cache natiu de setup-python
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements/development.txt'
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install -r backend/requirements/development.txt
 
       - name: Run tests
@@ -49,4 +55,7 @@ jobs:
           DB_SCHEMA: public
         run: |
           cd backend
-          python manage.py test
+          # OPTIMITZACIÓ 2: Paral·lelisme i velocitat de Django
+          # --parallel: Utilitza diversos nuclis (si els tests ho permeten)
+          # --keepdb: (Opcional) Reutilitza la DB si fessis servir self-hosted runners
+          python manage.py test --parallel

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Magatzem, Ubicacio, Treballador, Superior, Mosso, Producte, Lot
+from .models import Magatzem, Ubicacio, Treballador, Producte, Lot
 
 
 class MagatzemSerializer(serializers.ModelSerializer):
@@ -22,11 +22,7 @@ class TreballadorSerializer(serializers.ModelSerializer):
         fields = ['telefon', 'nom', 'tipus']
 
     def get_tipus(self, obj):
-        if hasattr(obj, 'superior'):
-            return 'superior'
-        if hasattr(obj, 'mosso'):
-            return 'mosso'
-        return None
+        return 'Superior' if obj.superior else 'Mosso'
 
 
 class ProducteSerializer(serializers.ModelSerializer):
