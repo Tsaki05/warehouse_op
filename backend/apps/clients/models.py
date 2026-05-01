@@ -2,7 +2,16 @@ from django.db import models
 
 
 class Client(models.Model):
-    nif               = models.CharField(max_length=9, min_length=9,primary_key=True)
+    nif               = models.CharField(
+        validators=[
+            RegexValidator(
+                regex='^[a-zA-Z0-9]{8}$',
+                message='El NIF ha de tenir exactament 8 caràcters.',
+                code='invalid_length'
+            )
+        ],
+        primary_key=True
+    )
     nom               = models.CharField(max_length=100)
     correu_electronic = models.EmailField()
 
@@ -10,6 +19,13 @@ class Client(models.Model):
         db_table = 'client'
         verbose_name = 'Client'
         verbose_name_plural = 'Clients'
+
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(nif__regex=r'^[a-zA-Z0-9]{8}$'),
+                name='longitud_exacta_8'
+            )
+        ]
 
     def __str__(self):
         return f"{self.nom} ({self.nif})"
