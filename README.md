@@ -12,7 +12,7 @@ Aplicació web per gestionar magatzems d'una empresa de venda a l'engròs. Perme
 ## Estructura del projecte
 
 ```
-magatzem/
+warehouse_op/
 ├── .github/                  # CI/CD i templates de GitHub
 │   ├── workflows/
 │   │   └── ci.yml
@@ -35,6 +35,7 @@ magatzem/
 │       ├── base.txt
 │       ├── development.txt
 │       └── production.txt
+├── fronted/...
 ├── docs/                     # Documentació
 ├── docker-compose.yml
 ├── .env.example
@@ -46,8 +47,8 @@ magatzem/
 ### 1. Clona el repositori
 
 ```bash
-git clone https://github.com/el-teu-usuari/magatzem.git
-cd magatzem
+git clone https://github.com/el-teu-usuari/warehouse_op.git
+cd warehouse_op
 ```
 
 ### 2. Crea el fitxer d'entorn
@@ -100,25 +101,8 @@ Un cop aixecat el servidor, l'API és accessible a:
 - `http://localhost:8000/api/clients/` — Clients
 - `http://localhost:8000/api/comandes/` — Comandes i factures
 
-## Contribució
-
-1. Crea una branca des de `develop`: `git checkout -b feature/nom-de-la-feature`
-2. Fes els canvis i commiteja: `git commit -m "feat: descripció"`
-3. Puja la branca: `git push origin feature/nom-de-la-feature`
-4. Obre un Pull Request cap a `develop`
-
-### Convenció de commits
-
-```
-feat:     nova funcionalitat
-fix:      correcció d'un bug
-refactor: refactorització de codi
-docs:     canvis a documentació
-test:     afegir o modificar tests
-chore:    tasques de manteniment
-```
 
 ## Autors
 
-- [Nom 1](https://github.com/usuari1)
+- [Tsegaye Fontserè](https://github.com/Tsaki05)
 - [Nom 2](https://github.com/usuari2)

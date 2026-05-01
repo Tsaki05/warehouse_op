@@ -2,12 +2,27 @@ from django.db import models
 
 
 class Magatzem(models.Model):
-    codi_magatzem = models.CharField(max_length=8, min_length=8, primary_key=True)
+    codi_magatzem = models.CharField(
+        validators=[
+            RegexValidator(
+                regex='^[a-zA-Z0-9]{8}$', 
+                message='El codi ha de tenir exactament 8 caràcters.',
+                code='invalid_length'
+            )
+        ],
+        primary_key=True)
 
     class Meta:
         db_table = 'magatzem'
         verbose_name = 'Magatzem'
         verbose_name_plural = 'Magatzems'
+
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(codi_magatzem__regex=r'^[a-zA-Z0-9]{8}$'),
+                name='longitud_exacta_8'
+            )
+        ]
 
     def __str__(self):
         return self.codi_magatzem
