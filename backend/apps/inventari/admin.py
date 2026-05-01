@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Magatzem, Ubicacio, Treballador, Superior, Mosso, Producte, Lot
+from .models import Magatzem, Ubicacio, Treballador, Producte, Lot
 
 admin.site.register(Magatzem)
 admin.site.register(Ubicacio)
