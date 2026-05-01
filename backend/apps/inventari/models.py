@@ -1,5 +1,5 @@
 from django.db import models
-
+from django.core.validators import RegexValidator
 
 class Magatzem(models.Model):
     codi_magatzem = models.CharField(
@@ -29,15 +29,62 @@ class Magatzem(models.Model):
 
 
 class Ubicacio(models.Model):
+    id_ubicacio = models.AutoField(primary_key=True)
     magatzem  = models.ForeignKey(Magatzem, on_delete=models.CASCADE, related_name='ubicacions')
-    passadis  = models.CharField(max_length=3, min_length=3)
-    estant    = models.CharField(max_length=3, min_length=3)
-    alcada    = models.CharField(max_length=3, min_length=3)
+    passadis  = models.CharField(
+        validators=[
+            RegexValidator(
+                regex='^[a-zA-Z0-9]{3}$', 
+                message='El passadís ha de tenir exactament 3 caràcters.',
+                code='invalid_length'
+            )
+        ],
+    )
+    estant    = models.CharField(
+        validators=[
+            RegexValidator(
+                regex='^[a-zA-Z0-9]{3}$', 
+                message='L’estant ha de tenir exactament 3 caràcters.',
+                code='invalid_length'
+            )
+        ],
+        max_length=3, min_length=3
+    )
+    alcada    = models.CharField(
+        validators=[
+            RegexValidator(
+                regex='^[a-zA-Z0-9]{3}$', 
+                message='L’alcada ha de tenir exactament 3 caràcters.',
+                code='invalid_length'
+            )
+        ],
+        max_length=3, min_length=3
+    )
 
     class Meta:
         db_table = 'ubicacio'
         verbose_name = 'Ubicació'
         verbose_name_plural = 'Ubicacions'
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=['magatzem', 'passadis', 'estant', 'alcada'], 
+                name='unique_ubicacio_total'
+            ),
+
+            models.CheckConstraint(
+                check=models.Q(passadis__regex=r'^[a-zA-Z0-9]{3}$'),
+                name='longitud_exacta_3'
+            ),
+            models.CheckConstraint(
+                check=models.Q(estant__regex=r'^[a-zA-Z0-9]{3}$'),
+                name='longitud_exacta_3'
+            ),
+            models.CheckConstraint(
+                check=models.Q(alcada__regex=r'^[a-zA-Z0-9]{3}$'),
+                name='longitud_exacta_3'
+            )
+        ]
 
     def __str__(self):
         return f"{self.magatzem_id} — {self.passadis}/{self.estant}/{self.alcada}"
@@ -46,6 +93,7 @@ class Ubicacio(models.Model):
 class Treballador(models.Model):
     telefon = models.CharField(max_length=20, primary_key=True)
     nom     = models.CharField(max_length=100)
+    superior = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'treballador'
@@ -53,35 +101,8 @@ class Treballador(models.Model):
         verbose_name_plural = 'Treballadors'
 
     def __str__(self):
-        return f"{self.nom} ({self.telefon})"
+        return f"{self.nom} ({self.superior?'Superior':'Mosso'}) - {self.telefon}"
 
-
-class Superior(models.Model):
-    treballador = models.OneToOneField(
-        Treballador, on_delete=models.CASCADE, primary_key=True, related_name='superior'
-    )
-
-    class Meta:
-        db_table = 'superior'
-        verbose_name = 'Superior'
-        verbose_name_plural = 'Superiors'
-
-    def __str__(self):
-        return str(self.treballador)
-
-
-class Mosso(models.Model):
-    treballador = models.OneToOneField(
-        Treballador, on_delete=models.CASCADE, primary_key=True, related_name='mosso'
-    )
-
-    class Meta:
-        db_table = 'mosso'
-        verbose_name = 'Mosso'
-        verbose_name_plural = 'Mossos'
-
-    def __str__(self):
-        return str(self.treballador)
 
 
 class Producte(models.Model):
@@ -91,7 +112,16 @@ class Producte(models.Model):
         GRAN   = 'gran',   'Gran'
         GEGANT = 'gegant', 'Gegant'
 
-    id_producte    = models.CharField(max_length=12, primary_key=True)
+    id_producte    = models.CharField(
+        validators=[
+            RegexValidator(
+                regex='^[a-zA-Z0-9]{12}$',
+                message='El ID del producte ha de tenir exactament 12 caràcters.',
+                code='invalid_length'
+            )
+        ],
+        primary_key=True
+    )
     codi_proveidor = models.CharField(max_length=50)
     estoc_total    = models.IntegerField(default=0, min_value=0)
     preu           = models.DecimalField(max_digits=10, decimal_places=2, min_value=0)
@@ -101,6 +131,12 @@ class Producte(models.Model):
         db_table = 'producte'
         verbose_name = 'Producte'
         verbose_name_plural = 'Productes'
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(id_producte__regex=r'^[a-zA-Z0-9]{12}$'),
+                name='longitud_exacta_12'
+            )
+        ]
 
     def __str__(self):
         return f"{self.id_producte} ({self.categoria})"
@@ -109,7 +145,7 @@ class Producte(models.Model):
 class Lot(models.Model):
     ubicacio  = models.ForeignKey(Ubicacio, on_delete=models.CASCADE, related_name='lots')
     producte  = models.ForeignKey(Producte, on_delete=models.CASCADE, related_name='lots')
-    superior  = models.ForeignKey(Superior, on_delete=models.CASCADE, related_name='lots')
+    superior  = models.ForeignKey(Treballador, on_delete=models.CASCADE, related_name='lots')
     quantitat = models.IntegerField(min_value=1)
 
     class Meta:
