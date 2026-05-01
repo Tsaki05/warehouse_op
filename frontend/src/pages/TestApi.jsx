@@ -70,12 +70,12 @@ const TestApi = () => {
             <p>No hi ha magatzems creats. Prova de crear-ne un a l'admin de Django.</p>
           ) : (
             <div style={{ display: 'grid', gap: '10px' }}>
-              {data.map((m) => (
-                <div key={m.codi_magatzem || Math.random()} style={styles.card}>
-                  <strong>Codi:</strong> {m.codi_magatzem} <br />
-                  <small style={{ color: '#7f8c8d' }}>ID Intern: {m.id || 'N/A'}</small>
-                </div>
-              ))}
+                {data.map((m, index) => (
+                    <div key={m.codi_magatzem || index} style={styles.card}>
+                    <strong>Codi:</strong> {m.codi_magatzem} <br />
+                    <small style={{ color: '#7f8c8d' }}>ID Intern: {m.id || 'N/A'}</small>
+                    </div>
+                ))}
             </div>
           )}
         </div>
