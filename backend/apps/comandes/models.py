@@ -75,14 +75,26 @@ class Comanda(models.Model):
 class Paquet(models.Model):
     comanda   = models.ForeignKey(Comanda, on_delete=models.CASCADE, related_name='paquets')
     producte  = models.ForeignKey(Producte, on_delete=models.PROTECT, related_name='paquets')
-    quantitat = models.IntegerField(check=models.Q(quantitat__gt=0))
+    quantitat = models.IntegerField()
     preu      = models.DecimalField(max_digits=10, decimal_places=2)
 
     class Meta:
         db_table = 'paquet'
         verbose_name = 'Paquet'
         verbose_name_plural = 'Paquets'
-        unique_together = [['comanda', 'producte']]
+        
+        class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['comanda', 'producte'],
+                name='comanda_producte_unic'
+            ),
+            models.CheckConstraint(
+                
+                check=~models.Q(quantitat=0), 
+                name='quantitat_no_es_zero'
+            )
+        ]
 
     def __str__(self):
         return f"{self.producte_id} x{self.quantitat} @ {self.comanda_id}"
