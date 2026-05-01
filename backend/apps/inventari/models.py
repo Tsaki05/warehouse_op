@@ -101,8 +101,8 @@ class Treballador(models.Model):
         verbose_name_plural = 'Treballadors'
 
     def __str__(self):
-        return f"{self.nom} ({self.superior?'Superior':'Mosso'}) - {self.telefon}"
-
+        carrec = 'Superior' if self.superior else 'Mosso'
+        return f"{self.nom} ({carrec}) - {self.telefon}
 
 
 class Producte(models.Model):
@@ -143,9 +143,9 @@ class Producte(models.Model):
 
 
 class Lot(models.Model):
-    ubicacio  = models.ForeignKey(Ubicacio, on_delete=models.CASCADE, related_name='lots')
-    producte  = models.ForeignKey(Producte, on_delete=models.CASCADE, related_name='lots')
-    superior  = models.ForeignKey(Treballador, on_delete=models.CASCADE, related_name='lots')
+    ubicacio  = models.ForeignKey(Ubicacio, on_delete=models.RESTRICT, related_name='lots')
+    producte  = models.ForeignKey(Producte, on_delete=models.RESTRICT, related_name='lots')
+    superior  = models.ForeignKey(Treballador, on_delete=models.RESTRICT, related_name='lots')
     quantitat = models.IntegerField(min_value=1)
 
     class Meta:
@@ -155,4 +155,4 @@ class Lot(models.Model):
         unique_together = [['ubicacio', 'producte']]
 
     def __str__(self):
-        return f"Lot {self.producte_id} @ {self.ubicacio_id}"
+        return f"Lot {self.producte_id} @ {self.ubicacio_id} ({self.quantitat} unitats)"
