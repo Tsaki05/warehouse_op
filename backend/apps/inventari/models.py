@@ -178,6 +178,7 @@ class Lot(models.Model):
                 message="La quantitat per lot ha de ser un número enter major a 0.",
                 code='invalid_quantity'
             )
+        ]
     )
 
     class Meta:
