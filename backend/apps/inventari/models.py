@@ -102,7 +102,7 @@ class Treballador(models.Model):
 
     def __str__(self):
         carrec = 'Superior' if self.superior else 'Mosso'
-        return f"{self.nom} ({carrec}) - {self.telefon}
+        return f"{self.nom} ({carrec}) - {self.telefon}"
 
 
 class Producte(models.Model):
