@@ -32,21 +32,22 @@ def codi_alfanumeric(n):
 def codi_numeric(n):
     return codi(n, digits=True)
 
-def nif_fake():
-    return codi(8)
-
+def nif_fake(e):
+    lletra = random.choice(string.ascii_uppercase)
+    digits = ''.join(random.choices(string.digits, k=8))
+    return lletra + digits if e else digits + lletra
 
 def seed(
     n_magatzems=10,
-    n_ubicacions_per_magatzem=50,
-    n_superiors=20,
+    n_ubicacions_per_magatzem=5000,
+    n_superiors=10,
     n_mossos=50,
     n_productes=500,
     n_lots=1000,
     n_empreses=200,
     n_individuals=300,
-    n_comandes=2000,
-    n_factures=500,
+    n_comandes=20000,
+    n_factures=15000,
 ):
     print("Generant magatzems...")
     magatzems = [Magatzem.objects.get_or_create(codi_magatzem=codi(8))[0] for _ in range(n_magatzems)]
@@ -107,7 +108,7 @@ def seed(
     print("Generant clients empresa...")
     clients_empresa = []
     for _ in range(n_empreses):
-        nif = nif_fake()
+        nif = nif_fake(True)
         if Client.objects.filter(nif=nif).exists():
             continue
         c = Client.objects.create(
@@ -125,7 +126,7 @@ def seed(
     print("Generant clients individuals...")
     clients_individual = []
     for _ in range(n_individuals):
-        nif = nif_fake()
+        nif = nif_fake(False)
         if Client.objects.filter(nif=nif).exists():
             continue
         c = Client.objects.create(

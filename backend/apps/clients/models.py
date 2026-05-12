@@ -6,8 +6,8 @@ class Client(models.Model):
     nif               = models.CharField(
         validators=[
             RegexValidator(
-                regex='^[a-zA-Z0-9]{8}$',
-                message='El NIF ha de tenir exactament 8 caràcters.',
+                regex='^[a-zA-Z0-9]{9}$',
+                message='El NIF ha de tenir exactament 9 caràcters.',
                 code='invalid_length'
             )
         ],
@@ -23,8 +23,8 @@ class Client(models.Model):
 
         constraints = [
             models.CheckConstraint(
-                check=models.Q(nif__regex=r'^[a-zA-Z0-9]{8}$'),
-                name='nif_longitud_exacta_8'
+                check=models.Q(nif__regex=r'^[a-zA-Z0-9]{9}$'),
+                name='nif_longitud_exacta_9'
             )
         ]
 
