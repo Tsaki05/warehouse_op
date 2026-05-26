@@ -10,7 +10,7 @@ from decimal import Decimal
 from faker import Faker
 
 from apps.inventari.models import Magatzem, Ubicacio, Treballador, Producte, Lot
-from apps.clients.models import Client, Empresa, Individual
+from apps.clients.models import Client, Empresa, Individual, ClientMagatzem
 from apps.comandes.models import Factura, Comanda, Paquet
 
 fake = Faker('es_ES')
@@ -138,6 +138,11 @@ def seed(
             adressa=fake.address(),
             enviament=random.choice([True, False]),
         )
+        for m in random.sample(magatzems, k=random.randint(1, min(3, len(magatzems)))):
+            ClientMagatzem.objects.create(
+                client=c, magatzem=m,
+                data_alta=fake.date_between(start_date='-3y', end_date='today'),
+            )
         clients_empresa.append(c)
 
     print("Generant clients individuals...")
@@ -152,6 +157,11 @@ def seed(
             correu_electronic=fake.email(),
         )
         Individual.objects.create(client=c, telefon=fake.phone_number()[:20])
+        for m in random.sample(magatzems, k=random.randint(1, min(2, len(magatzems)))):
+            ClientMagatzem.objects.create(
+                client=c, magatzem=m,
+                data_alta=fake.date_between(start_date='-3y', end_date='today'),
+            )
         clients_individual.append(c)
 
     tots_clients = clients_empresa + clients_individual

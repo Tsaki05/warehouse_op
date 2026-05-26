@@ -44,8 +44,8 @@ class Ubicacio(models.Model):
     estant    = models.CharField(
         validators=[
             RegexValidator(
-                regex='^[a-zA-Z0-9]{3}$', 
-                message='L’estant ha de tenir exactament 3 caràcters.',
+                regex='^[a-zA-Z0-9]{3}$',
+                message="L'estant ha de tenir exactament 3 caràcters.",
                 code='invalid_length'
             )
         ]
@@ -53,8 +53,8 @@ class Ubicacio(models.Model):
     alcada    = models.CharField(
         validators=[
             RegexValidator(
-                regex='^[a-zA-Z0-9]{3}$', 
-                message='L’alcada ha de tenir exactament 3 caràcters.',
+                regex='^[a-zA-Z0-9]{3}$',
+                message="L'alcada ha de tenir exactament 3 caràcters.",
                 code='invalid_length'
             )
         ]
@@ -133,10 +133,11 @@ class Producte(models.Model):
     codi_proveidor = models.CharField(max_length=50)
     estoc_total    = models.IntegerField(
         default=0,
+        db_index=True,
         validators=[
             RegexValidator(
                 regex='^[0-9]+$',
-                message="L’estoc total ha de ser un número entero no negativo.",
+                message="L'estoc total ha de ser un número entero no negativo.",
                 code='invalid_number_estoc_total'
             )
         ]
@@ -152,7 +153,7 @@ class Producte(models.Model):
             )
         ]
     )
-    categoria      = models.CharField(max_length=6, choices=Mida.choices)
+    categoria      = models.CharField(max_length=6, choices=Mida.choices, db_index=True)
 
     class Meta:
         db_table = 'producte'

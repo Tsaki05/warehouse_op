@@ -15,6 +15,12 @@ class Client(models.Model):
     )
     nom               = models.CharField(max_length=100)
     correu_electronic = models.EmailField()
+    magatzems         = models.ManyToManyField(
+        'inventari.Magatzem',
+        through='ClientMagatzem',
+        blank=True,
+        related_name='clients',
+    )
 
     class Meta:
         db_table = 'client'
@@ -30,6 +36,20 @@ class Client(models.Model):
 
     def __str__(self):
         return f"{self.nom} ({self.nif})"
+
+
+class ClientMagatzem(models.Model):
+    client    = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='client_magatzems')
+    magatzem  = models.ForeignKey('inventari.Magatzem', on_delete=models.CASCADE, related_name='client_magatzems')
+    data_alta = models.DateField(auto_now_add=True)
+
+    class Meta:
+        db_table        = 'client_magatzem'
+        unique_together = [('client', 'magatzem')]
+        verbose_name    = 'Client-Magatzem'
+
+    def __str__(self):
+        return f"{self.client_id} → {self.magatzem_id}"
 
 
 class Empresa(models.Model):

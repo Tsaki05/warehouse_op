@@ -102,7 +102,7 @@ class TreballadorViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         mag_ids = _mag_id(self.request)
-        qs = Treballador.objects.all()
+        qs = Treballador.objects.select_related('magatzem')
         if mag_ids:
             qs = qs.filter(magatzem_id__in=mag_ids)
         return qs

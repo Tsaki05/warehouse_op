@@ -17,7 +17,7 @@ class Factura(models.Model):
     )
     client       = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='factures')
     import_total = models.DecimalField(max_digits=12, decimal_places=2)
-    data         = models.DateField()
+    data         = models.DateField(db_index=True)
 
     class Meta:
         db_table = 'factura'
@@ -51,12 +51,12 @@ class Comanda(models.Model):
         primary_key=True
     )
     client          = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='comandes')
-    data            = models.DateField(auto_now_add=True)
+    data            = models.DateField(auto_now_add=True, db_index=True)
     factura         = models.ForeignKey(
         Factura, on_delete=models.SET_NULL, null=True, blank=True, related_name='comandes'
     )
     metode_pagament = models.IntegerField(choices=MetodePagament.choices)
-    enviament       = models.BooleanField(default=False)
+    enviament       = models.BooleanField(default=False, db_index=True)
     import_total    = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
     class Meta:
