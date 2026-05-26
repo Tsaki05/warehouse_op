@@ -5,12 +5,13 @@ class Magatzem(models.Model):
     codi_magatzem = models.CharField(
         validators=[
             RegexValidator(
-                regex='^[a-zA-Z0-9]{8}$', 
+                regex='^[a-zA-Z0-9]{8}$',
                 message='El codi ha de tenir exactament 8 caràcters.',
                 code='invalid_length'
             )
         ],
         primary_key=True)
+    nom = models.CharField(max_length=100, blank=True, default='')
 
     class Meta:
         db_table = 'magatzem'
@@ -89,9 +90,16 @@ class Ubicacio(models.Model):
 
 
 class Treballador(models.Model):
-    telefon = models.CharField(max_length=20, primary_key=True)
-    nom     = models.CharField(max_length=100)
-    superior = models.BooleanField(default=False)
+    telefon   = models.CharField(max_length=20, primary_key=True)
+    nom       = models.CharField(max_length=100)
+    superior  = models.BooleanField(default=False)
+    magatzem  = models.ForeignKey(
+        'Magatzem',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='treballadors'
+    )
 
     class Meta:
         db_table = 'treballador'
@@ -120,6 +128,8 @@ class Producte(models.Model):
         ],
         primary_key=True
     )
+    nom            = models.CharField(max_length=200, default='')
+    descripcio     = models.TextField(blank=True, default='')
     codi_proveidor = models.CharField(max_length=50)
     estoc_total    = models.IntegerField(
         default=0,
@@ -168,10 +178,11 @@ class Producte(models.Model):
 
 
 class Lot(models.Model):
-    ubicacio  = models.ForeignKey(Ubicacio, on_delete=models.RESTRICT, related_name='lots')
-    producte  = models.ForeignKey(Producte, on_delete=models.RESTRICT, related_name='lots')
-    superior  = models.ForeignKey(Treballador, on_delete=models.RESTRICT, related_name='lots')
-    quantitat = models.IntegerField(
+    ubicacio     = models.ForeignKey(Ubicacio, on_delete=models.RESTRICT, related_name='lots')
+    producte     = models.ForeignKey(Producte, on_delete=models.RESTRICT, related_name='lots')
+    superior     = models.ForeignKey(Treballador, on_delete=models.RESTRICT, related_name='lots')
+    data_entrada = models.DateField(auto_now_add=True)
+    quantitat    = models.IntegerField(
         validators=[
             RegexValidator(
                 regex='^[1-9]+$',

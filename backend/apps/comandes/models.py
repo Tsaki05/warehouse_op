@@ -51,6 +51,7 @@ class Comanda(models.Model):
         primary_key=True
     )
     client          = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='comandes')
+    data            = models.DateField(auto_now_add=True)
     factura         = models.ForeignKey(
         Factura, on_delete=models.SET_NULL, null=True, blank=True, related_name='comandes'
     )

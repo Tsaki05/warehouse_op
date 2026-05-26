@@ -1,5 +1,7 @@
 Django==4.2
 djangorestframework==3.15
+django-cors-headers==4.9.0
+djangorestframework-simplejwt==5.3.1
 psycopg2-binary>=2.9.10
 python-decouple==3.8
 faker==24.0.0

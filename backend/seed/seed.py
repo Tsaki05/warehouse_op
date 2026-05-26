@@ -19,6 +19,12 @@ CATEGORIES = ['petit', 'mitja', 'gran', 'gegant']
 ENVIAMENTS  = ['correu expres', 'UPS']
 PAGAMENTS   = [1, 2, 3]
 
+MATERIALS = ['Acer', 'Alumini', 'Plàstic', 'Ferro', 'Coure', 'Fusta', 'Vidre', 'Goma', 'Titani', 'Carboni']
+ADJECTIUS  = ['Industrial', 'Tècnic', 'Professional', 'Estàndard', 'Premium', 'Compacte', 'Modular', 'Universal']
+
+def nom_producte(categoria):
+    return f"{random.choice(MATERIALS)} {random.choice(ADJECTIUS)} {codi_alfanumeric(4)} ({categoria})"
+
 
 def codi(n, digits=False):
     chars = string.digits if digits else string.ascii_uppercase + string.digits
@@ -50,7 +56,13 @@ def seed(
     n_factures=15000,
 ):
     print("Generant magatzems...")
-    magatzems = [Magatzem.objects.get_or_create(codi_magatzem=codi(8))[0] for _ in range(n_magatzems)]
+    magatzems = []
+    for _ in range(n_magatzems):
+        m, _ = Magatzem.objects.get_or_create(codi_magatzem=codi(8))
+        if not m.nom:
+            m.nom = f"Centre Logístic {fake.city()}"
+            m.save(update_fields=['nom'])
+        magatzems.append(m)
 
     # FIX: indentació incorrecta (espai extra)
     print("Generant ubicacions...")
@@ -72,6 +84,7 @@ def seed(
             telefon=fake.phone_number()[:20],
             nom=fake.name(),
             superior=True,
+            magatzem=random.choice(magatzems),
         )
         superiors.append(t)
 
@@ -79,18 +92,22 @@ def seed(
         Treballador.objects.create(
             telefon=fake.phone_number()[:20],
             nom=fake.name(),
+            magatzem=random.choice(magatzems),
             superior=False,
         )
 
     print("Generant productes...")
     productes = []
     for _ in range(n_productes):
+        cat = random.choice(CATEGORIES)
         p = Producte.objects.create(
             id_producte=codi_numeric(12),
+            nom=nom_producte(cat),
+            descripcio=fake.text(max_nb_chars=150),
             codi_proveidor=codi_alfanumeric(6),
             estoc_total=random.randint(0, 10000),
             preu=Decimal(str(round(random.uniform(1, 999), 2))),
-            categoria=random.choice(CATEGORIES),
+            categoria=cat,
         )
         productes.append(p)
 
