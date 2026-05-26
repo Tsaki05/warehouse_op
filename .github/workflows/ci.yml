@@ -7,8 +7,11 @@ on:
     branches: [main, develop]
 
 jobs:
-  # JOB 1: ANALISI I TESTS DEL BACKEND
+  # ──────────────────────────────────────────────────────────────────────
+  # JOB 1: TESTS UNITARIS DEL BACKEND
+  # ──────────────────────────────────────────────────────────────────────
   backend-tests:
+    name: Backend — Tests unitaris
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -54,8 +57,11 @@ jobs:
           cd backend
           python manage.py test --parallel
 
-  # JOB 2: ANALISI I TESTS DEL FRONTEND
+  # ──────────────────────────────────────────────────────────────────────
+  # JOB 2: LINT I BUILD DEL FRONTEND
+  # ──────────────────────────────────────────────────────────────────────
   frontend-tests:
+    name: Frontend — Lint i Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,21 +70,117 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # OPTIMITZACIÓ: Cache per a npm (node_modules)
           cache: 'npm'
           cache-dependency-path: 'frontend/package-lock.json'
 
       - name: Install Node dependencies
-        run: |
-          cd frontend
-          npm ci # 'npm ci' és més ràpid i net en entorns de CI que 'npm install'
+        run: cd frontend && npm ci
 
       - name: Lint (Anàlisi de codi)
-        run: |
-          cd frontend
-          npm run lint # Això comprova que el codi segueixi les regles d'estil
+        run: cd frontend && npm run lint
 
       - name: Build (Comprovació de compilació)
+        run: cd frontend && npm run build
+
+  # ──────────────────────────────────────────────────────────────────────
+  # JOB 3: SMOKE TESTS D'INTEGRACIÓ BACK + FRONT
+  #
+  # Només s'executa si els dos jobs anteriors passen.
+  # Prova que el backend i el frontend funcionen CONJUNTAMENT:
+  #   - El servidor Django arrenca i respon a les mateixes URLs que crida el frontend
+  #   - Autenticació JWT end-to-end (login → token → crida autenticada)
+  #   - Els endpoints retornen la forma de dades que el frontend espera
+  #   - Scoping per rol (superior veu 1 magatzem, admin veu tots)
+  #   - Filtre multi-magatzem (nova funcionalitat)
+  #   - Capçaleres CORS (sense elles el navegador bloquejaria totes les respostes)
+  #   - El build del frontend es pot servir com a estàtic des del mateix servidor
+  # ──────────────────────────────────────────────────────────────────────
+  integration:
+    name: Integració — Smoke tests Back + Front
+    needs: [backend-tests, frontend-tests]
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: magatzem_integration
+          POSTGRES_USER: magatzem
+          POSTGRES_PASSWORD: magatzem
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --tmpfs /var/lib/postgresql/data
+        ports:
+          - 5432:5432
+
+    env:
+      DJANGO_SECRET_KEY: ci-integration-secret-key-32chars!!
+      DJANGO_ENV: development
+      DB_NAME: magatzem_integration
+      DB_USER: magatzem
+      DB_PASSWORD: magatzem
+      DB_HOST: localhost
+      DB_PORT: 5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Backend ──────────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements/development.txt'
+
+      - name: Install Python dependencies
         run: |
-          cd frontend
-          npm run build # Ens assegurem que el projecte compila correctament per a producció
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements/development.txt
+
+      - name: Migrate i seed mínims
+        run: |
+          cd backend
+          python manage.py migrate
+          python ci/setup_ci_data.py
+
+      - name: Arrancar servidor Django (background)
+        run: |
+          cd backend
+          python manage.py runserver --noreload 8000 &
+          # Esperar fins que el servidor respongui (màx. 20 s)
+          python -c "
+          import time, urllib.request, urllib.error
+          for i in range(20):
+              try:
+                  urllib.request.urlopen('http://localhost:8000/api/auth/login/')
+              except urllib.error.HTTPError:
+                  print(f'Servidor llest ({i+1}s)')
+                  break
+              except OSError:
+                  time.sleep(1)
+          else:
+              print('Timeout: servidor no respon')
+              exit(1)
+          "
+
+      # ── Frontend ─────────────────────────────────────────────────────
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Install Node dependencies
+        run: cd frontend && npm ci
+
+      - name: Build frontend (verifica que compila contra el backend real)
+        run: cd frontend && npm run build
+
+      # ── Smoke tests ───────────────────────────────────────────────────
+      - name: Smoke tests d'integració HTTP
+        run: python backend/ci/integration_test.py
