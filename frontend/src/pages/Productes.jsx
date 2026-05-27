@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilter } from '../contexts/FilterContext';
-import { getProductes, getUbicacions, createProducte, createLot } from '../api/api';
+import { getMagatzems, getProductes, getUbicacions, createProducte, createLot } from '../api/api';
 import { useDebounce } from '../hooks/useDebounce';
+import MagatzemAutocomplete from '../components/MagatzemAutocomplete';
 
 const CATEGORIES = ['petit', 'mitja', 'gran', 'gegant'];
 const CAT_BADGE  = { petit: 'blue', mitja: 'green', gran: 'orange', gegant: 'purple' };
@@ -18,11 +20,14 @@ const EMPTY_PROD = {
   id_producte: '', nom: '', descripcio: '', codi_proveidor: '',
   estoc_total: 0, preu: '', categoria: 'petit',
 };
+const EMPTY_LOT = { magatzemObj: null, ubicacioObj: null, quantitat: 1 };
 
 export default function Productes() {
+  const location       = useLocation();
   const { user }       = useAuth();
   const { magFiltrat } = useFilter();
-  const canEdit        = user?.rol === 'admin' || user?.rol === 'superior';
+  const isAdmin        = user?.rol === 'admin';
+  const canEdit        = isAdmin || user?.rol === 'superior';
 
   const [productes, setProductes]   = useState([]);
   const [baixEstoc, setBaixEstoc]   = useState([]);
@@ -31,38 +36,41 @@ export default function Productes() {
   const [error, setError]           = useState(null);
   const [expandit, setExpandit]     = useState(null);
 
-  const [cerca, setCerca]           = useState('');
-  const [categoria, setCategoria]   = useState('');
-  const [ordre, setOrdre]           = useState('nom');
-  const cercaDb                     = useDebounce(cerca, 350);
+  const [cerca, setCerca]               = useState('');
+  const [categoria, setCategoria]       = useState('');
+  const [ordre, setOrdre]               = useState('nom');
+  const [baixEstocFiltrat, setBaixEstocFiltrat] = useState(
+    () => new URLSearchParams(location.search).get('baix_estoc') === 'true'
+  );
+  const cercaDb = useDebounce(cerca, 350);
 
   // modals
-  const [modalProd, setModalProd]         = useState(false);
-  const [modalLot, setModalLot]           = useState(null);   // producte id (per row)
-  const [modalLotGlobal, setModalLotGlobal] = useState(false); // standalone Nou lot
-  const [saving, setSaving]               = useState(false);
-  const [formError, setFormError]         = useState('');
+  const [modalProd, setModalProd]           = useState(false);
+  const [modalLot, setModalLot]             = useState(null);
+  const [modalLotGlobal, setModalLotGlobal] = useState(false);
+  const [saving, setSaving]                 = useState(false);
+  const [formError, setFormError]           = useState('');
 
-  // form producte
-  const [formProd, setFormProd]     = useState(EMPTY_PROD);
-  const [formLots, setFormLots]     = useState([{ ubicacio: '', quantitat: 1 }]);
+  // form states
+  const [formProd, setFormProd]         = useState(EMPTY_PROD);
+  const [formLots, setFormLots]         = useState([{ ...EMPTY_LOT }]);
+  const [formLot, setFormLot]           = useState({ ...EMPTY_LOT });
+  const [formLotGlobal, setFormLotGlobal] = useState({ producteObj: null, ...EMPTY_LOT });
 
-  // form lot (nou stock per-row)
-  const [formLot, setFormLot]       = useState({ ubicacio: '', quantitat: 1 });
+  // magatzems per als pickers d'admin (lazy, una sola càrrega)
+  const [magatzemsOpts, setMagatzemsOpts]   = useState([]);
+  const [magatzemsLoaded, setMagatzemsLoaded] = useState(false);
 
-  // form lot global (standalone)
-  const [formLotGlobal, setFormLotGlobal] = useState({ producte: '', ubicacio: '', quantitat: 1 });
-  const [cercaProdGlobal, setCercaProdGlobal] = useState('');
-  const cercaProdGlobalDb                    = useDebounce(cercaProdGlobal, 350);
-  const [prodOptions, setProdOptions]        = useState([]);
-
-  // ubicacions (shared across all modals)
-  const [cercaUbic, setCercaUbic]   = useState('');
-  const cercaUbicDb                 = useDebounce(cercaUbic, 400);
-  const [ubicacions, setUbicacions] = useState([]);
-
-  const magIds   = magFiltrat.map(m => m.codi_magatzem);
+  const magIds    = magFiltrat.map(m => m.codi_magatzem);
   const magFilter = magIds.length > 0 ? { magatzem_filter: magIds } : {};
+
+  function ensureMagatzems() {
+    if (!isAdmin || magatzemsLoaded) return;
+    setMagatzemsLoaded(true);
+    getMagatzems()
+      .then(res => setMagatzemsOpts(res.data.results ?? res.data))
+      .catch(() => {});
+  }
 
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadProductes = useCallback(() => {
@@ -71,15 +79,16 @@ export default function Productes() {
       cerca: cercaDb || undefined,
       categoria: categoria || undefined,
       ordre,
+      baix_estoc: baixEstocFiltrat ? 'true' : undefined,
       ...magFilter,
     })
       .then(res => {
         setProductes(res.data.results ?? res.data);
         setTotal(res.data.count ?? (res.data.results ?? res.data).length);
       })
-      .catch(() => setError('No s\'ha pogut carregar els productes.'))
+      .catch(() => setError("No s'ha pogut carregar els productes."))
       .finally(() => setLoading(false));
-  }, [cercaDb, categoria, ordre, magFiltrat]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cercaDb, categoria, ordre, baixEstocFiltrat, magFiltrat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadProductes(); }, [loadProductes]);
 
@@ -90,50 +99,32 @@ export default function Productes() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [magFiltrat]);
 
-  // Load ubicacions when any modal that needs them is open
-  useEffect(() => {
-    if (!modalProd && modalLot === null && !modalLotGlobal) return;
-    getUbicacions({ cerca: cercaUbicDb || undefined, ...magFilter })
-      .then(res => setUbicacions(res.data.results ?? res.data))
-      .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cercaUbicDb, modalProd, modalLot, modalLotGlobal, magFiltrat]);
-
-  // Load products for the global lot modal product picker
-  useEffect(() => {
-    if (!modalLotGlobal) return;
-    getProductes({ cerca: cercaProdGlobalDb || undefined, ...magFilter })
-      .then(res => setProdOptions(res.data.results ?? res.data))
-      .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalLotGlobal, cercaProdGlobalDb, magFiltrat]);
-
-  // ── Create product (with ≥1 lots) ─────────────────────────────────────────
+  // ── Handlers ──────────────────────────────────────────────────────────────
   async function handleCreateProducte(e) {
     e.preventDefault();
-    const emptyLots = formLots.filter(l => !l.ubicacio);
-    if (emptyLots.length) { setFormError('Cal seleccionar ubicació per a cada lot.'); return; }
+    if (formLots.some(l => !l.ubicacioObj)) {
+      setFormError('Cal seleccionar ubicació per a cada lot.'); return;
+    }
     setSaving(true); setFormError('');
     try {
-      await createProducte({ ...formProd, lots: formLots });
+      const lots = formLots.map(l => ({ ubicacio: l.ubicacioObj.id_ubicacio, quantitat: l.quantitat }));
+      await createProducte({ ...formProd, lots });
       loadProductes();
       getProductes({ baix_estoc: 'true', ordre: 'estoc_asc', ...magFilter })
         .then(r => setBaixEstoc(r.data.results ?? r.data));
       setModalProd(false);
     } catch (err) {
       const d = err.response?.data;
-      const msg = d?.lots?.[0] || d?.detail || JSON.stringify(d) || 'Error en crear el producte.';
-      setFormError(msg);
+      setFormError(d?.lots?.[0] || d?.detail || JSON.stringify(d) || 'Error en crear el producte.');
     } finally { setSaving(false); }
   }
 
-  // ── Add stock (lot) to existing product — from expanded row ───────────────
   async function handleCreateLot(e) {
     e.preventDefault();
-    if (!formLot.ubicacio) { setFormError('Cal seleccionar una ubicació.'); return; }
+    if (!formLot.ubicacioObj) { setFormError('Cal seleccionar una ubicació.'); return; }
     setSaving(true); setFormError('');
     try {
-      await createLot({ producte: modalLot, ubicacio: formLot.ubicacio, quantitat: formLot.quantitat });
+      await createLot({ producte: modalLot, ubicacio: formLot.ubicacioObj.id_ubicacio, quantitat: formLot.quantitat });
       loadProductes();
       setModalLot(null);
     } catch (err) {
@@ -142,16 +133,15 @@ export default function Productes() {
     } finally { setSaving(false); }
   }
 
-  // ── Add stock — standalone modal ──────────────────────────────────────────
   async function handleCreateLotGlobal(e) {
     e.preventDefault();
-    if (!formLotGlobal.producte) { setFormError('Cal seleccionar un producte.'); return; }
-    if (!formLotGlobal.ubicacio) { setFormError('Cal seleccionar una ubicació.'); return; }
+    if (!formLotGlobal.producteObj) { setFormError('Cal seleccionar un producte.'); return; }
+    if (!formLotGlobal.ubicacioObj) { setFormError('Cal seleccionar una ubicació.'); return; }
     setSaving(true); setFormError('');
     try {
       await createLot({
-        producte: formLotGlobal.producte,
-        ubicacio: formLotGlobal.ubicacio,
+        producte: formLotGlobal.producteObj.id_producte,
+        ubicacio: formLotGlobal.ubicacioObj.id_ubicacio,
         quantitat: formLotGlobal.quantitat,
       });
       loadProductes();
@@ -166,21 +156,31 @@ export default function Productes() {
 
   function openModalProd() {
     setFormProd(EMPTY_PROD);
-    setFormLots([{ ubicacio: '', quantitat: 1 }]);
-    setCercaUbic(''); setFormError('');
+    setFormLots([{ ...EMPTY_LOT }]);
+    setFormError('');
     setModalProd(true);
+    ensureMagatzems();
   }
 
   function openModalLot(producteId) {
-    setFormLot({ ubicacio: '', quantitat: 1 });
-    setCercaUbic(''); setFormError('');
+    setFormLot({ ...EMPTY_LOT });
+    setFormError('');
     setModalLot(producteId);
+    ensureMagatzems();
   }
 
   function openModalLotGlobal() {
-    setFormLotGlobal({ producte: '', ubicacio: '', quantitat: 1 });
-    setCercaProdGlobal(''); setCercaUbic(''); setFormError('');
+    setFormLotGlobal({ producteObj: null, ...EMPTY_LOT });
+    setFormError('');
     setModalLotGlobal(true);
+    ensureMagatzems();
+  }
+
+  function activarFiltreBaixEstoc(producteId) {
+    setBaixEstocFiltrat(true);
+    setExpandit(producteId);
+    setCerca('');
+    setCategoria('');
   }
 
   if (error) return <div className="state-box state-box--error">{error}</div>;
@@ -197,12 +197,21 @@ export default function Productes() {
         <div className="alert alert--warning" style={{ marginBottom: 20 }}>
           <span style={{ fontSize: '1.2rem' }}>⚠️</span>
           <div>
-            <strong>{baixEstoc.length} producte{baixEstoc.length > 1 ? 's' : ''} amb estoc crític (&lt;25 u.):</strong>
+            <strong>
+              {baixEstoc.length} producte{baixEstoc.length > 1 ? 's' : ''} amb estoc crític (&lt;25 u.):
+            </strong>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
               {baixEstoc.map(p => (
-                <span key={p.id_producte} className="badge badge--red">
+                <button
+                  key={p.id_producte}
+                  type="button"
+                  className="badge badge--red"
+                  style={{ cursor: 'pointer', border: 'none' }}
+                  onClick={() => activarFiltreBaixEstoc(p.id_producte)}
+                  title="Clica per filtrar estoc crític"
+                >
                   {p.nom} — {p.estoc_total} u.
-                </span>
+                </button>
               ))}
             </div>
           </div>
@@ -214,7 +223,7 @@ export default function Productes() {
         <div className="search-bar" style={{ flex: 1 }}>
           <input className="search-input"
             placeholder="Cercar per nom, codi, proveïdor, descripció o ubicació..."
-            value={cerca} onChange={e => setCerca(e.target.value)} autoFocus />
+            value={cerca} onChange={e => { setCerca(e.target.value); setBaixEstocFiltrat(false); }} autoFocus />
           {cerca && <button type="button" className="search-clear" onClick={() => setCerca('')}>✕</button>}
           {loading && cerca && <span style={{ padding: '0 12px', color: '#aab4be', fontSize: '0.85rem' }}>⟳</span>}
         </div>
@@ -230,15 +239,34 @@ export default function Productes() {
       </div>
 
       <div className="filter-bar">
-        <button className={`filter-btn${!categoria ? ' filter-btn--active' : ''}`} onClick={() => setCategoria('')}>Totes</button>
+        <button
+          className={`filter-btn${!categoria && !baixEstocFiltrat ? ' filter-btn--active' : ''}`}
+          onClick={() => { setCategoria(''); setBaixEstocFiltrat(false); }}>
+          Totes
+        </button>
         {CATEGORIES.map(c => (
-          <button key={c} className={`filter-btn${categoria === c ? ' filter-btn--active' : ''}`} onClick={() => setCategoria(c)}>
+          <button key={c}
+            className={`filter-btn${categoria === c && !baixEstocFiltrat ? ' filter-btn--active' : ''}`}
+            onClick={() => { setCategoria(c); setBaixEstocFiltrat(false); }}>
             {CAT_LABEL[c]}
           </button>
         ))}
+        {baixEstocFiltrat && (
+          <button
+            className="filter-btn filter-btn--active"
+            style={{ color: '#e74c3c' }}
+            onClick={() => setBaixEstocFiltrat(false)}
+            title="Treure filtre d'estoc crític">
+            ⚠️ Estoc crític ✕
+          </button>
+        )}
       </div>
 
-      {!loading && <p className="result-count">{total.toLocaleString()} productes{cerca && <> · <em>"{cerca}"</em></>}</p>}
+      {!loading && (
+        <p className="result-count">
+          {total.toLocaleString()} productes{cerca && <> · <em>"{cerca}"</em></>}
+        </p>
+      )}
 
       {/* ── Taula ── */}
       {loading && !productes.length ? (
@@ -301,7 +329,7 @@ export default function Productes() {
         </div>
       )}
 
-      {/* ── Modal nou producte (amb lots obligatoris) ── */}
+      {/* ── Modal nou producte ── */}
       {modalProd && (
         <Modal title="Nou producte" onClose={() => setModalProd(false)}>
           <form onSubmit={handleCreateProducte} className="modal-form">
@@ -342,50 +370,41 @@ export default function Productes() {
                 onChange={e => setFormProd(f => ({ ...f, estoc_total: parseInt(e.target.value) || 0 }))} />
             </Field>
 
-            {/* Lots inicials — obligatoris */}
             <div style={{ borderTop: '1px solid #f0f2f5', paddingTop: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <label className="login-label">📍 Lots inicials (on s'ubica l'estoc) *</label>
                 <button type="button" className="btn-sm btn-sm--edit"
-                  onClick={() => setFormLots(ls => [...ls, { ubicacio: '', quantitat: 1 }])}>
-                  + Afegir ubicació
+                  onClick={() => setFormLots(ls => [...ls, { ...EMPTY_LOT }])}>
+                  + Afegir lot
                 </button>
               </div>
-
-              <Field label="Cercar ubicació">
-                <input className="login-input" placeholder="Filtrar per passadís, estant o alçada..."
-                  value={cercaUbic} onChange={e => setCercaUbic(e.target.value)} />
-              </Field>
-
               {formLots.map((lot, i) => (
-                <div key={i} style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'flex-end' }}>
-                  <div style={{ flex: 2 }}>
-                    <label className="login-label" style={{ fontSize: '0.82rem' }}>Ubicació {i + 1}</label>
-                    <select className="login-input" value={lot.ubicacio}
-                      onChange={e => {
-                        const ls = [...formLots]; ls[i] = { ...ls[i], ubicacio: e.target.value };
-                        setFormLots(ls);
-                      }}>
-                      <option value="">— Selecciona —</option>
-                      {ubicacions.map(u => (
-                        <option key={u.id_ubicacio} value={u.id_ubicacio}>
-                          {u.passadis}-{u.estant}-{u.alcada}{u.magatzem_nom ? ` · ${u.magatzem_nom}` : ''}
-                        </option>
-                      ))}
-                    </select>
+                <div key={i} style={{
+                  background: '#f8f9fa', borderRadius: 8, padding: '12px 12px 8px',
+                  marginTop: 8, position: 'relative',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#7f8c8d' }}>Lot {i + 1}</span>
+                    {formLots.length > 1 && (
+                      <button type="button" className="btn-sm btn-sm--del"
+                        onClick={() => setFormLots(ls => ls.filter((_, j) => j !== i))}>✕</button>
+                    )}
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <label className="login-label" style={{ fontSize: '0.82rem' }}>Quantitat</label>
+                  <UbicacioPicker
+                    isAdmin={isAdmin}
+                    magatzemsOpts={magatzemsOpts}
+                    magFilter={magFilter}
+                    value={lot}
+                    onChange={v => setFormLots(ls => {
+                      const n = [...ls]; n[i] = { ...n[i], ...v }; return n;
+                    })}
+                  />
+                  <Field label="Quantitat">
                     <input className="login-input" type="number" min="1" value={lot.quantitat}
-                      onChange={e => {
-                        const ls = [...formLots]; ls[i] = { ...ls[i], quantitat: parseInt(e.target.value) || 1 };
-                        setFormLots(ls);
-                      }} />
-                  </div>
-                  {formLots.length > 1 && (
-                    <button type="button" className="btn-sm btn-sm--del" style={{ marginBottom: 2 }}
-                      onClick={() => setFormLots(ls => ls.filter((_, j) => j !== i))}>✕</button>
-                  )}
+                      onChange={e => setFormLots(ls => {
+                        const n = [...ls]; n[i] = { ...n[i], quantitat: parseInt(e.target.value) || 1 }; return n;
+                      })} />
+                  </Field>
                 </div>
               ))}
             </div>
@@ -401,28 +420,20 @@ export default function Productes() {
         </Modal>
       )}
 
-      {/* ── Modal nou lot (stock addicional per fila) ── */}
+      {/* ── Modal nou lot (per fila) ── */}
       {modalLot !== null && (
         <Modal title={`Nou lot — ${modalLot}`} onClose={() => setModalLot(null)}>
           <form onSubmit={handleCreateLot} className="modal-form">
             <p style={{ color: '#7f8c8d', fontSize: '0.95rem' }}>
               Afegeix estoc addicional d'aquest producte en una nova ubicació del magatzem.
             </p>
-            <Field label="Cercar ubicació">
-              <input className="login-input" placeholder="Filtrar per passadís, estant o alçada..."
-                value={cercaUbic} onChange={e => setCercaUbic(e.target.value)} />
-            </Field>
-            <Field label="Ubicació" required>
-              <select className="login-input" size={6} value={formLot.ubicacio}
-                onChange={e => setFormLot(f => ({ ...f, ubicacio: e.target.value }))}>
-                <option value="">— Selecciona ubicació —</option>
-                {ubicacions.map(u => (
-                  <option key={u.id_ubicacio} value={u.id_ubicacio}>
-                    {u.passadis}-{u.estant}-{u.alcada}{u.magatzem_nom ? ` · ${u.magatzem_nom}` : ''}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <UbicacioPicker
+              isAdmin={isAdmin}
+              magatzemsOpts={magatzemsOpts}
+              magFilter={magFilter}
+              value={formLot}
+              onChange={v => setFormLot(f => ({ ...f, ...v }))}
+            />
             <Field label="Quantitat" required>
               <input className="login-input" type="number" min="1" value={formLot.quantitat}
                 onChange={e => setFormLot(f => ({ ...f, quantitat: parseInt(e.target.value) || 1 }))} required />
@@ -438,49 +449,28 @@ export default function Productes() {
         </Modal>
       )}
 
-      {/* ── Modal nou lot global (standalone) ── */}
+      {/* ── Modal nou lot global ── */}
       {modalLotGlobal && (
         <Modal title="Nou lot — afegir stock" onClose={() => setModalLotGlobal(false)}>
           <form onSubmit={handleCreateLotGlobal} className="modal-form">
             <p style={{ color: '#7f8c8d', fontSize: '0.95rem' }}>
               Afegeix stock d'un producte existent en una ubicació del magatzem.
             </p>
-
-            {/* Producte picker */}
-            <Field label="Cercar producte">
-              <input className="login-input" placeholder="Nom o codi del producte..."
-                value={cercaProdGlobal} onChange={e => setCercaProdGlobal(e.target.value)} />
-            </Field>
             <Field label="Producte" required>
-              <select className="login-input" size={5} value={formLotGlobal.producte}
-                onChange={e => setFormLotGlobal(f => ({ ...f, producte: e.target.value }))}>
-                <option value="">— Selecciona producte —</option>
-                {prodOptions.map(p => (
-                  <option key={p.id_producte} value={p.id_producte}>
-                    {p.nom} ({p.id_producte})
-                  </option>
-                ))}
-              </select>
+              <ProducteAutocomplete
+                value={formLotGlobal.producteObj}
+                onChange={p => setFormLotGlobal(f => ({ ...f, producteObj: p }))}
+                magFilter={magFilter}
+              />
             </Field>
-
-            <div style={{ borderTop: '1px solid #f0f2f5', paddingTop: 4 }} />
-
-            {/* Ubicació picker */}
-            <Field label="Cercar ubicació">
-              <input className="login-input" placeholder="Filtrar per passadís, estant o alçada..."
-                value={cercaUbic} onChange={e => setCercaUbic(e.target.value)} />
-            </Field>
-            <Field label="Ubicació" required>
-              <select className="login-input" size={5} value={formLotGlobal.ubicacio}
-                onChange={e => setFormLotGlobal(f => ({ ...f, ubicacio: e.target.value }))}>
-                <option value="">— Selecciona ubicació —</option>
-                {ubicacions.map(u => (
-                  <option key={u.id_ubicacio} value={u.id_ubicacio}>
-                    {u.passadis}-{u.estant}-{u.alcada}{u.magatzem_nom ? ` · ${u.magatzem_nom}` : ''}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <div style={{ borderTop: '1px solid #f0f2f5', margin: '4px 0' }} />
+            <UbicacioPicker
+              isAdmin={isAdmin}
+              magatzemsOpts={magatzemsOpts}
+              magFilter={magFilter}
+              value={formLotGlobal}
+              onChange={v => setFormLotGlobal(f => ({ ...f, ...v }))}
+            />
             <Field label="Quantitat" required>
               <input className="login-input" type="number" min="1" value={formLotGlobal.quantitat}
                 onChange={e => setFormLotGlobal(f => ({ ...f, quantitat: parseInt(e.target.value) || 1 }))} required />
@@ -494,6 +484,164 @@ export default function Productes() {
             </div>
           </form>
         </Modal>
+      )}
+    </div>
+  );
+}
+
+// ── UbicacioPicker: admin veu magatzem + ubicació, altres només ubicació ──────
+function UbicacioPicker({ isAdmin, magatzemsOpts, magFilter, value, onChange }) {
+  return (
+    <div>
+      {isAdmin && (
+        <Field label="Magatzem">
+          <MagatzemAutocomplete
+            magatzems={magatzemsOpts}
+            value={value.magatzemObj}
+            onChange={m => onChange({ magatzemObj: m, ubicacioObj: null })}
+            placeholder="Selecciona magatzem..."
+          />
+        </Field>
+      )}
+      <Field label="Ubicació" required>
+        <UbicacioAutocomplete
+          key={isAdmin ? (value.magatzemObj?.codi_magatzem ?? 'no-mag') : 'fixed'}
+          value={value.ubicacioObj}
+          onChange={u => onChange({ ubicacioObj: u })}
+          magatzemId={isAdmin ? value.magatzemObj?.codi_magatzem ?? null : null}
+          magFilter={isAdmin ? {} : magFilter}
+          disabled={isAdmin && !value.magatzemObj}
+          placeholder={isAdmin && !value.magatzemObj ? 'Selecciona primer un magatzem...' : 'Cercar ubicació...'}
+        />
+      </Field>
+    </div>
+  );
+}
+
+// ── UbicacioAutocomplete: cerca a la API amb debounce ─────────────────────────
+function UbicacioAutocomplete({ value, onChange, magatzemId, magFilter = {}, disabled = false, placeholder }) {
+  const [query, setQuery]     = useState('');
+  const [open, setOpen]       = useState(false);
+  const [options, setOptions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const queryDb = useDebounce(query, 300);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handle(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, []);
+
+  useEffect(() => {
+    if (!open || disabled) return;
+    setLoading(true);
+    const params = { cerca: queryDb || undefined, ...magFilter };
+    if (magatzemId) params.magatzem = magatzemId;
+    getUbicacions(params)
+      .then(res => setOptions(res.data.results ?? res.data))
+      .catch(() => setOptions([]))
+      .finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryDb, open, magatzemId, disabled]);
+
+  const displayText = value ? `${value.passadis}-${value.estant}-${value.alcada}` : '';
+
+  return (
+    <div className="mag-auto" ref={ref} style={disabled ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
+      <div className="mag-auto-wrap">
+        <input
+          className="mag-auto-input"
+          placeholder={displayText || placeholder || 'Cercar ubicació...'}
+          value={query}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => !disabled && setOpen(true)}
+          disabled={disabled}
+        />
+        {value && (
+          <button type="button" className="mag-auto-clear"
+            onMouseDown={e => { e.stopPropagation(); onChange(null); setQuery(''); setOpen(false); }}>
+            ✕
+          </button>
+        )}
+      </div>
+      {open && !disabled && (
+        <div className="mag-auto-dropdown">
+          {loading ? (
+            <div className="mag-auto-empty">Carregant...</div>
+          ) : options.length === 0 ? (
+            <div className="mag-auto-empty">Cap ubicació trobada</div>
+          ) : options.map(u => (
+            <div key={u.id_ubicacio} className="mag-auto-opt"
+              onMouseDown={() => { onChange(u); setQuery(''); setOpen(false); }}>
+              <span className="mag-auto-opt-nom text-mono">{u.passadis}-{u.estant}-{u.alcada}</span>
+              {u.magatzem_nom && <span className="mag-auto-opt-cod">{u.magatzem_nom}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ProducteAutocomplete: cerca a la API amb debounce ─────────────────────────
+function ProducteAutocomplete({ value, onChange, magFilter = {}, placeholder = 'Cercar producte...' }) {
+  const [query, setQuery]     = useState('');
+  const [open, setOpen]       = useState(false);
+  const [options, setOptions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const queryDb = useDebounce(query, 300);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handle(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    getProductes({ cerca: queryDb || undefined, ...magFilter })
+      .then(res => setOptions(res.data.results ?? res.data))
+      .catch(() => setOptions([]))
+      .finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryDb, open]);
+
+  const displayText = value ? value.nom : '';
+
+  return (
+    <div className="mag-auto" ref={ref}>
+      <div className="mag-auto-wrap">
+        <input
+          className="mag-auto-input"
+          placeholder={displayText || placeholder}
+          value={query}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+        />
+        {value && (
+          <button type="button" className="mag-auto-clear"
+            onMouseDown={e => { e.stopPropagation(); onChange(null); setQuery(''); setOpen(false); }}>
+            ✕
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="mag-auto-dropdown">
+          {loading ? (
+            <div className="mag-auto-empty">Carregant...</div>
+          ) : options.length === 0 ? (
+            <div className="mag-auto-empty">Cap producte trobat</div>
+          ) : options.map(p => (
+            <div key={p.id_producte} className="mag-auto-opt"
+              onMouseDown={() => { onChange(p); setQuery(''); setOpen(false); }}>
+              <span className="mag-auto-opt-nom">{p.nom}</span>
+              <span className="mag-auto-opt-cod text-mono">{p.id_producte}</span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

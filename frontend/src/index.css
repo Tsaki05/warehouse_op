@@ -69,6 +69,7 @@ html, body, #root {
 .stat-card--green  .stat-card-value { color: #27ae60; }
 .stat-card--orange .stat-card-value { color: #d68910; }
 .stat-card--purple .stat-card-value { color: #8e44ad; }
+.stat-card--red    .stat-card-value { color: #e74c3c; }
 
 /* ── Dashboard grid ────────────────────────────── */
 .dashboard-grid {

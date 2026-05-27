@@ -74,6 +74,9 @@ export const getClientDetail = (nif)    => api.get(`/clients/clients/${nif}/`);
 
 // Comandes
 export const getComandes     = (params) => api.get('/comandes/comandes/', { params });
+export const createComanda   = (data)   => api.post('/comandes/comandes/', data);
+export const marcarPreparat  = (id)     => api.patch(`/comandes/comandes/${id}/preparar/`);
+export const getDashboard    = (params) => api.get('/comandes/comandes/dashboard/', { params });
 export const getFactures     = (params) => api.get('/comandes/factures/', { params });
 export const getPaquets      = () => api.get('/comandes/paquets/');
 

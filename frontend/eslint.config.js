@@ -17,5 +17,9 @@ export default defineConfig([
       globals: globals.browser,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
+    rules: {
+      // Standard data-fetching pattern; React Compiler not used in this project
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ])

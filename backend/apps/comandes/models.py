@@ -1,7 +1,10 @@
 from django.db import models
+from django.contrib.auth import get_user_model
 from apps.clients.models import Client
 from apps.inventari.models import Producte
 from django.core.validators import RegexValidator
+
+User = get_user_model()
 
 
 class Factura(models.Model):
@@ -55,9 +58,14 @@ class Comanda(models.Model):
     factura         = models.ForeignKey(
         Factura, on_delete=models.SET_NULL, null=True, blank=True, related_name='comandes'
     )
-    metode_pagament = models.IntegerField(choices=MetodePagament.choices)
+    metode_pagament = models.IntegerField(choices=MetodePagament.choices, null=True, blank=True)
     enviament       = models.BooleanField(default=False, db_index=True)
     import_total    = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    preparat        = models.BooleanField(default=False, db_index=True)
+    preparat_per    = models.ForeignKey(
+        User, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='comandes_preparades'
+    )
 
     class Meta:
         db_table = 'comanda'

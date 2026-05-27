@@ -32,7 +32,7 @@ export default function MagatzemAutocomplete({
     const t = query.toLowerCase();
     if (!t) return true;
     return (m.nom || '').toLowerCase().includes(t) || m.codi_magatzem.toLowerCase().includes(t);
-  }).slice(0, 12);
+  });
 
   function toggle(m) {
     if (multi) {

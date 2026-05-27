@@ -40,7 +40,7 @@ function Layout() {
 
   useEffect(() => {
     if (user?.rol === 'admin') {
-      getMagatzems().then(r => setMagatzems(r.data.results ?? r.data)).catch(() => {});
+      getMagatzems({ page_size: 1000 }).then(r => setMagatzems(r.data.results ?? r.data)).catch(() => {});
     }
   }, [user?.rol]);
 
