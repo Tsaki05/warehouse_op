@@ -5,7 +5,7 @@ Simulem les mateixes crides HTTP que fa el frontend React:
   - autenticació JWT (login, rebuig sense token)
   - endpoints principals autenticats
   - escoping per rol (superior veu 1 magatzem, admin veu tots)
-  - filtre multi-magatzem (?magatzem_filter=CI001&magatzem_filter=CI002)
+  - filtre multi-magatzem (?magatzem_filter=CI000001&magatzem_filter=CI000002)
   - cerca en viu (?cerca=...)
   - filtre baix estoc
   - capçaleres CORS (clau perquè el navegador accepti les respostes)
@@ -162,10 +162,10 @@ if sup_token:
     r = get('/inventari/magatzems/', token=sup_token, label='Magatzems (superior)')
     if r is not None:
         items = r.get('results', r) if isinstance(r, dict) else r
-        if len(items) == 1 and items[0]['codi_magatzem'] == 'CI001':
-            ok('Superior veu exactament 1 magatzem (el seu: CI001)')
+        if len(items) == 1 and items[0]['codi_magatzem'] == 'CI000001':
+            ok('Superior veu exactament 1 magatzem (el seu: CI000001)')
         else:
-            fail(f'Superior hauria de veure 1 magatzem (CI001), en veu: {[m["codi_magatzem"] for m in items]}')
+            fail(f'Superior hauria de veure 1 magatzem (CI000001), en veu: {[m["codi_magatzem"] for m in items]}')
 
     r = get('/inventari/productes/', token=sup_token, label='Productes (superior)')
     if r is not None:
@@ -192,8 +192,8 @@ if mosso_token:
 print('\n[5] Filtre multi-magatzem (?magatzem_filter=...)')
 
 # Filtre un sol magatzem
-r = get('/inventari/productes/?magatzem_filter=CI001',
-        token=admin_token, label='Productes ?magatzem_filter=CI001')
+r = get('/inventari/productes/?magatzem_filter=CI000001',
+        token=admin_token, label='Productes ?magatzem_filter=CI000001')
 if r is not None:
     items = r.get('results', r) if isinstance(r, dict) else r
     if len(items) == 2:
@@ -202,8 +202,8 @@ if r is not None:
         fail(f'Filtre CI001 hauria de retornar 2 productes, en retorna {len(items)}')
 
 # Filtre dos magatzems alhora (multi-select del frontend)
-r = get('/inventari/productes/?magatzem_filter=CI001&magatzem_filter=CI002',
-        token=admin_token, label='Productes ?magatzem_filter=CI001&CI002')
+r = get('/inventari/productes/?magatzem_filter=CI000001&magatzem_filter=CI000002',
+        token=admin_token, label='Productes ?magatzem_filter=CI000001&CI002')
 if r is not None:
     items = r.get('results', r) if isinstance(r, dict) else r
     if len(items) == 2:  # p1 i p2 (p1 és a ambdós, distinct evita duplicats)
@@ -212,8 +212,8 @@ if r is not None:
         fail(f'Multi-filtre hauria de retornar 2 productes (distinct), en retorna {len(items)}')
 
 # Filtre magatzems a ubicacions
-r = get('/inventari/ubicacions/?magatzem_filter=CI002',
-        token=admin_token, label='Ubicacions ?magatzem_filter=CI002')
+r = get('/inventari/ubicacions/?magatzem_filter=CI000002',
+        token=admin_token, label='Ubicacions ?magatzem_filter=CI000002')
 if r is not None:
     items = r.get('results', r) if isinstance(r, dict) else r
     if len(items) == 1:
@@ -240,10 +240,11 @@ r = get('/inventari/productes/?baix_estoc=true',
         token=admin_token, label='Filtre baix estoc (<25 u.)')
 if r is not None:
     items = r.get('results', r) if isinstance(r, dict) else r
-    if len(items) == 1 and items[0]['id_producte'] == '000000000002':
-        ok('Filtre baix estoc retorna 1 producte (estoc=5)')
+    ids   = [p.get('id_producte') for p in items]
+    if '000000000002' in ids and all(p.get('estoc_total', 99) < 25 for p in items):
+        ok(f'Filtre baix estoc correcte — {len(items)} producte(s), inclou CI (estoc=5)')
     else:
-        fail(f'Filtre baix estoc incorrecte: {[p.get("id_producte") for p in items]}')
+        fail(f'Filtre baix estoc incorrecte: {ids}')
 
 
 # ══════════════════════════════════════════════════════════════════════

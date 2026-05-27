@@ -1,6 +1,7 @@
 """
 Dades mínimes per als smoke tests d'integració en CI.
 S'executa un cop, sobre una BD neta (ja migrada).
+Idempotent: es pot tornar a executar sense errors (get_or_create / update).
 """
 import os
 import sys
@@ -17,44 +18,51 @@ from apps.accounts.models import Perfil
 from apps.inventari.models import Magatzem, Ubicacio, Treballador, Producte, Lot
 
 # ── Usuaris ────────────────────────────────────────────────────────────
-admin = User.objects.create_user('ci_admin',    password='CiAdmin1234!')
-supu  = User.objects.create_user('ci_superior', password='CiSup1234!')
-mosso = User.objects.create_user('ci_mosso',    password='CiMosso1234!')
+admin, _ = User.objects.get_or_create(username='ci_admin')
+admin.set_password('CiAdmin1234!'); admin.save()
+
+supu, _  = User.objects.get_or_create(username='ci_superior')
+supu.set_password('CiSup1234!'); supu.save()
+
+mosso, _ = User.objects.get_or_create(username='ci_mosso')
+mosso.set_password('CiMosso1234!'); mosso.save()
 
 # ── Magatzems (2 → permet provar scoping i multi-filtre) ──────────────
-mag1 = Magatzem.objects.create(codi_magatzem='CI001', nom='Magatzem CI Alpha')
-mag2 = Magatzem.objects.create(codi_magatzem='CI002', nom='Magatzem CI Beta')
+mag1, _ = Magatzem.objects.get_or_create(codi_magatzem='CI000001', defaults={'nom': 'Magatzem CI Alpha'})
+mag2, _ = Magatzem.objects.get_or_create(codi_magatzem='CI000002', defaults={'nom': 'Magatzem CI Beta'})
 
-# ── Perfils ────────────────────────────────────────────────────────────
-Perfil.objects.create(user=admin, rol='admin')
-Perfil.objects.create(user=supu,  rol='superior', magatzem=mag1)
-Perfil.objects.create(user=mosso, rol='mosso',    magatzem=mag1)
+# ── Perfils (el signal ja els crea; els actualitzem amb el rol correcte) ──
+Perfil.objects.filter(user=admin).update(rol='admin',    magatzem=None)
+Perfil.objects.filter(user=supu).update( rol='superior', magatzem=mag1)
+Perfil.objects.filter(user=mosso).update(rol='mosso',    magatzem=mag1)
 
 # ── Treballadors superiors (necessaris per crear lots) ─────────────────
-sup1 = Treballador.objects.create(nif='11111111A', nom='Sup Alpha', magatzem=mag1, superior=True)
-sup2 = Treballador.objects.create(nif='22222222B', nom='Sup Beta',  magatzem=mag2, superior=True)
+sup1, _ = Treballador.objects.get_or_create(telefon='600000001', defaults={'nom': 'Sup Alpha', 'magatzem': mag1, 'superior': True})
+sup2, _ = Treballador.objects.get_or_create(telefon='600000002', defaults={'nom': 'Sup Beta',  'magatzem': mag2, 'superior': True})
 
 # ── Ubicacions ─────────────────────────────────────────────────────────
-u1 = Ubicacio.objects.create(magatzem=mag1, passadis='A01', estant='B01', alcada='C01')
-u2 = Ubicacio.objects.create(magatzem=mag1, passadis='A02', estant='B02', alcada='C02')
-u3 = Ubicacio.objects.create(magatzem=mag2, passadis='A01', estant='B01', alcada='C01')
+u1, _ = Ubicacio.objects.get_or_create(magatzem=mag1, passadis='A01', estant='B01', alcada='C01')
+u2, _ = Ubicacio.objects.get_or_create(magatzem=mag1, passadis='A02', estant='B02', alcada='C02')
+u3, _ = Ubicacio.objects.get_or_create(magatzem=mag2, passadis='A01', estant='B01', alcada='C01')
 
 # ── Productes + lots ───────────────────────────────────────────────────
-p1 = Producte.objects.create(
-    id_producte='000000000001', nom='Producte CI Normal',
-    preu=Decimal('9.99'),  categoria='petit', estoc_total=100, codi_proveidor='PROV01',
+p1, _ = Producte.objects.get_or_create(
+    id_producte='000000000001',
+    defaults={'nom': 'Producte CI Normal', 'preu': Decimal('9.99'),
+              'categoria': 'petit', 'estoc_total': 100, 'codi_proveidor': 'PROV01'},
 )
-p2 = Producte.objects.create(
-    id_producte='000000000002', nom='Producte CI Baix Estoc',
-    preu=Decimal('49.99'), categoria='gran',  estoc_total=5,   codi_proveidor='PROV02',
+p2, _ = Producte.objects.get_or_create(
+    id_producte='000000000002',
+    defaults={'nom': 'Producte CI Baix Estoc', 'preu': Decimal('49.99'),
+              'categoria': 'gran', 'estoc_total': 5, 'codi_proveidor': 'PROV02'},
 )
 
 # p1 a mag1, p2 a mag1 (estoc baix), lot addicional de p1 a mag2
-Lot.objects.create(producte=p1, ubicacio=u1, superior=sup1, quantitat=100)
-Lot.objects.create(producte=p2, ubicacio=u2, superior=sup1, quantitat=5)
-Lot.objects.create(producte=p1, ubicacio=u3, superior=sup2, quantitat=30)
+Lot.objects.get_or_create(producte=p1, ubicacio=u1, defaults={'superior': sup1, 'quantitat': 100})
+Lot.objects.get_or_create(producte=p2, ubicacio=u2, defaults={'superior': sup1, 'quantitat': 5})
+Lot.objects.get_or_create(producte=p1, ubicacio=u3, defaults={'superior': sup2, 'quantitat': 30})
 
 print('Setup CI: OK ✓')
 print(f'  Admin:    ci_admin / CiAdmin1234!')
-print(f'  Superior: ci_superior / CiSup1234!  (magatzem: {mag1.codi_magatzem})')
+print(f'  Superior: ci_superior / CiSup1234!   (magatzem: {mag1.codi_magatzem})')
 print(f'  Mosso:    ci_mosso / CiMosso1234!   (magatzem: {mag1.codi_magatzem})')
