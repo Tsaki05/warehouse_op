@@ -53,6 +53,7 @@ jobs:
           DB_PASSWORD: magatzem
           DB_HOST: localhost
           DB_PORT: 5432
+          DB_SCHEMA: public
         run: |
           cd backend
           python manage.py test --parallel
@@ -124,6 +125,7 @@ jobs:
       DB_PASSWORD: magatzem
       DB_HOST: localhost
       DB_PORT: 5432
+      DB_SCHEMA: public
 
     steps:
       - uses: actions/checkout@v4
