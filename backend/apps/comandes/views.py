@@ -49,6 +49,12 @@ class ComandaViewSet(
         comanda   = self.get_object()
         lots_data = request.data.get('lots', [])
 
+        if comanda.preparat:
+            return Response(
+                {'detail': 'Aquesta comanda ja ha estat preparada.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         with transaction.atomic():
             for ld in lots_data:
                 try:

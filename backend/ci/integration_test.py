@@ -232,13 +232,13 @@ if r is not None:
     else:
         fail(f'Cerca "CI Normal" hauria de retornar 1 resultat, en retorna {len(items)}')
 
-r = get('/inventari/productes/?baix_estoc=true',
-        token=admin_token, label='Filtre baix estoc (<25 u.)')
+r = get('/inventari/productes/?baix_estoc=true&magatzem_filter=CI000001',
+        token=admin_token, label='Filtre baix estoc CI000001 (<25 u.)')
 if r is not None:
     items = items_of(r)
     ids   = [p.get('id_producte') for p in items]
     if '000000000002' in ids:
-        ok(f'Filtre baix estoc correcte — {len(items)} producte(s), inclou CI (estoc=5)')
+        ok(f'Filtre baix estoc correcte — {len(items)} producte(s) CI, inclou p2 (estoc=5)')
     else:
         fail(f'Filtre baix estoc no inclou p2 (estoc=5): {ids}')
 
