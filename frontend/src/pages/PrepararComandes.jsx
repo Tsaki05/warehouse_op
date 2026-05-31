@@ -9,15 +9,14 @@ const METODE_LABEL = { 1: 'Targeta', 2: 'Transferència', 3: 'Efectiu' };
 const METODE_BADGE = { 1: 'blue',    2: 'green',          3: 'orange' };
 
 const FILTRES_ENVIAMENT = [
-  { key: '',      label: 'Tots' },
   { key: 'true',  label: '🚚 Enviament' },
   { key: 'false', label: '🏪 Recollida' },
 ];
 
-const FILTRES_PREPARAT = [
-  { key: '',      label: 'Totes' },
-  { key: 'false', label: '⏳ Per preparar' },
-  { key: 'true',  label: '✅ Preparades' },
+const FILTRES_FASE = [
+  { key: 'per_preparar', label: '⏳ Per preparar' },
+  { key: 'preparada',    label: '✅ Preparades' },
+  { key: 'facturada',    label: '🧾 Facturades' },
 ];
 
 const ORDRES = [
@@ -45,11 +44,11 @@ export default function PrepararComandes() {
   const [error, setError]         = useState(null);
   const [expandida, setExpandida] = useState(null);
 
-  const [cercaInput, setCercaInput]   = useState('');
-  const [enviament, setEnviament]     = useState('');
-  const [preparatFlt, setPreparatFlt] = useState('');
-  const [ordre, setOrdre]             = useState('data_desc');
-  const cerca                         = useDebounce(cercaInput, 350);
+  const [cercaInput, setCercaInput] = useState('');
+  const [enviaments, setEnviaments] = useState(new Set());
+  const [fases, setFases]           = useState(new Set());
+  const [ordre, setOrdre]           = useState('data_desc');
+  const cerca                       = useDebounce(cercaInput, 350);
 
   // modals
   const [modalNova, setModalNova]         = useState(false);
@@ -73,7 +72,7 @@ export default function PrepararComandes() {
 
   const load = useCallback((params) => {
     setLoading(true);
-    getComandes({ sense_factura: 'true', ...params })
+    getComandes(params)
       .then(res => {
         setComandes(res.data.results ?? res.data);
         setTotal(res.data.count ?? (res.data.results ?? res.data).length);
@@ -82,16 +81,20 @@ export default function PrepararComandes() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    load({
+  function buildParams() {
+    return {
       cerca:    cerca || undefined,
-      enviament: enviament || undefined,
-      preparat:  preparatFlt || undefined,
       ordre,
       ...magFilter,
-    });
+      ...(enviaments.size === 1 ? { enviament: [...enviaments][0] } : {}),
+      ...(fases.size > 0 ? { fase: [...fases] } : {}),
+    };
+  }
+
+  useEffect(() => {
+    load(buildParams());
     setExpandida(null);
-  }, [load, cerca, enviament, preparatFlt, ordre, magFiltrat]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [load, cerca, enviaments, fases, ordre, magFiltrat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   function openModalNova() {
@@ -129,7 +132,7 @@ export default function PrepararComandes() {
           quantitat: signe * Math.abs(parseInt(p.quantitat) || 1),
         })),
       });
-      load({ cerca: cerca || undefined, enviament: enviament || undefined, preparat: preparatFlt || undefined, ordre, ...magFilter });
+      load(buildParams());
       setModalNova(false);
     } catch (err) {
       const d = err.response?.data;
@@ -144,7 +147,7 @@ export default function PrepararComandes() {
   const preparedesPerClient = useMemo(() => {
     const m = {};
     for (const c of comandes) {
-      if (c.preparat) m[c.client] = (m[c.client] || 0) + 1;
+      if (c.preparat && !c.factura) m[c.client] = (m[c.client] || 0) + 1;
     }
     return m;
   }, [comandes]);
@@ -169,7 +172,7 @@ export default function PrepararComandes() {
       if (needsMetode) payload.metode_pagament = parseInt(confirmMetode);
       await createFactura(payload);
       setConfirmFact(null);
-      load({ cerca: cerca || undefined, enviament: enviament || undefined, preparat: preparatFlt || undefined, ordre, ...magFilter });
+      load(buildParams());
     } catch (err) {
       const d = err.response?.data;
       setFactError(d?.metode_pagament?.[0] || d?.comandes?.[0] || d?.detail || 'Error en crear la factura.');
@@ -192,7 +195,7 @@ export default function PrepararComandes() {
     <div>
       <div className="page-header">
         <h1 className="page-title">📦 Preparar Comandes</h1>
-        <p className="page-subtitle">Comandes pendents de facturar — paquets per preparar.</p>
+        <p className="page-subtitle">Gestió del cicle de vida de les comandes.</p>
       </div>
 
       {/* ── Controls ── */}
@@ -215,18 +218,24 @@ export default function PrepararComandes() {
         <div className="filter-bar" style={{ margin: 0 }}>
           {FILTRES_ENVIAMENT.map(f => (
             <button key={f.key}
-              className={`filter-btn${enviament === f.key ? ' filter-btn--active' : ''}`}
-              onClick={() => { setEnviament(f.key); setExpandida(null); }}>
+              className={`filter-btn${enviaments.has(f.key) ? ' filter-btn--active' : ''}`}
+              onClick={() => {
+                setEnviaments(prev => { const n = new Set(prev); n.has(f.key) ? n.delete(f.key) : n.add(f.key); return n; });
+                setExpandida(null);
+              }}>
               {f.label}
             </button>
           ))}
         </div>
 
         <div className="filter-bar" style={{ margin: 0 }}>
-          {FILTRES_PREPARAT.map(f => (
+          {FILTRES_FASE.map(f => (
             <button key={f.key}
-              className={`filter-btn${preparatFlt === f.key ? ' filter-btn--active' : ''}`}
-              onClick={() => { setPreparatFlt(f.key); setExpandida(null); }}>
+              className={`filter-btn${fases.has(f.key) ? ' filter-btn--active' : ''}`}
+              onClick={() => {
+                setFases(prev => { const n = new Set(prev); n.has(f.key) ? n.delete(f.key) : n.add(f.key); return n; });
+                setExpandida(null);
+              }}>
               {f.label}
             </button>
           ))}
@@ -252,7 +261,7 @@ export default function PrepararComandes() {
       {/* ── Resum ── */}
       {!loading && (
         <p className="result-count">
-          {total.toLocaleString()} comandes pendents
+          {total.toLocaleString()} comandes
           {cercaInput && <> · cerca: <em>"{cercaInput}"</em></>}
         </p>
       )}
@@ -310,7 +319,11 @@ export default function PrepararComandes() {
                 background: '#f8f9fb', display: 'flex', gap: 10,
                 justifyContent: 'flex-end', alignItems: 'center',
               }}>
-                {c.preparat ? (
+                {c.factura ? (
+                  <span style={{ color: '#aab4be', fontSize: '0.85rem' }}>
+                    🧾 Factura: <span className="text-mono" style={{ color: '#5d6d7e', fontWeight: 600 }}>{c.factura}</span>
+                  </span>
+                ) : c.preparat ? (
                   canInvoice ? (
                     <>
                       {nOthersPrepared > 0 && (

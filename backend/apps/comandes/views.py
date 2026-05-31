@@ -313,6 +313,17 @@ class ComandaViewSet(
         elif preparat == 'false':
             qs = qs.filter(preparat=False)
 
+        fases = p.getlist('fase')
+        if fases:
+            q = Q()
+            if 'per_preparar' in fases:
+                q |= Q(preparat=False, factura__isnull=True)
+            if 'preparada' in fases:
+                q |= Q(preparat=True, factura__isnull=True)
+            if 'facturada' in fases:
+                q |= Q(factura__isnull=False)
+            qs = qs.filter(q)
+
         enviament = p.get('enviament')
         if enviament == 'true':
             qs = qs.filter(enviament=True)
