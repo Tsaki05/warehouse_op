@@ -30,10 +30,12 @@ class TreballadorSerializer(serializers.ModelSerializer):
 class LotBreu(serializers.ModelSerializer):
     """Compact lot info embedded inside Producte."""
     ubicacio_codi = serializers.SerializerMethodField()
+    magatzem_id   = serializers.CharField(source='ubicacio.magatzem_id', read_only=True)
+    magatzem_nom  = serializers.CharField(source='ubicacio.magatzem.nom', read_only=True)
 
     class Meta:
         model  = Lot
-        fields = ['ubicacio', 'ubicacio_codi', 'quantitat', 'data_entrada']
+        fields = ['ubicacio', 'ubicacio_codi', 'magatzem_id', 'magatzem_nom', 'quantitat', 'data_entrada']
 
     def get_ubicacio_codi(self, obj):
         u = obj.ubicacio
@@ -41,14 +43,28 @@ class LotBreu(serializers.ModelSerializer):
 
 
 class ProducteSerializer(serializers.ModelSerializer):
-    lots = LotBreu(many=True, read_only=True)
+    lots               = LotBreu(many=True, read_only=True)
+    estoc_per_magatzem = serializers.SerializerMethodField()
 
     class Meta:
         model  = Producte
         fields = [
             'id_producte', 'nom', 'descripcio', 'codi_proveidor',
-            'estoc_total', 'preu', 'categoria', 'lots',
+            'estoc_total', 'estoc_per_magatzem', 'preu', 'categoria', 'lots',
         ]
+
+    def get_estoc_per_magatzem(self, obj):
+        result = {}
+        for l in obj.lots.all():
+            key = l.ubicacio.magatzem_id
+            if key not in result:
+                result[key] = {
+                    'magatzem_id':  key,
+                    'magatzem_nom': l.ubicacio.magatzem.nom,
+                    'estoc':        0,
+                }
+            result[key]['estoc'] += l.quantitat
+        return list(result.values())
 
 
 class LotSerializer(serializers.ModelSerializer):

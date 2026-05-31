@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilter } from '../contexts/FilterContext';
-import { getComandes, getClients, getProductes, createComanda, marcarPreparat } from '../api/api';
+import { getComandes, getClients, getProductes, getLots, createComanda, marcarPreparat, createFactura, createClient } from '../api/api';
 import { useDebounce } from '../hooks/useDebounce';
 
 const METODE_LABEL = { 1: 'Targeta', 2: 'Transferència', 3: 'Efectiu' };
@@ -34,7 +35,9 @@ const EMPTY_PAQUET = { producteObj: null, preu: '', quantitat: 1 };
 export default function PrepararComandes() {
   const { user }       = useAuth();
   const { magFiltrat } = useFilter();
+  const navigate       = useNavigate();
   const canCreate      = user?.rol === 'admin' || user?.rol === 'superior';
+  const canInvoice     = user?.rol === 'admin' || user?.rol === 'superior';
 
   const [comandes, setComandes]   = useState([]);
   const [total, setTotal]         = useState(0);
@@ -49,10 +52,17 @@ export default function PrepararComandes() {
   const cerca                         = useDebounce(cercaInput, 350);
 
   // modals
-  const [modalNova, setModalNova] = useState(false);
-  const [modalCsv, setModalCsv]   = useState(false);
-  const [saving, setSaving]       = useState(false);
-  const [formError, setFormError] = useState('');
+  const [modalNova, setModalNova]         = useState(false);
+  const [modalCsv, setModalCsv]           = useState(false);
+  const [saving, setSaving]               = useState(false);
+  const [formError, setFormError]         = useState('');
+  // modal preparació (selecció de lots)
+  const [preparacioComanda, setPreparacioComanda] = useState(null);
+  // modal confirmació factura
+  const [confirmFact, setConfirmFact]     = useState(null); // { comanda } | null
+  const [confirmMetode, setConfirmMetode] = useState('');
+  const [savingFact, setSavingFact]       = useState(false);
+  const [factError, setFactError]         = useState('');
 
   // form nova comanda
   const [form, setForm]           = useState({ ...EMPTY_FORM });
@@ -97,39 +107,77 @@ export default function PrepararComandes() {
     if (paquets.some(p => !p.producteObj)) { setFormError('Cal seleccionar producte per a cada línia.'); return; }
 
     const signe = form.tipus === 'retorn' ? -1 : 1;
-    const payload = {
-      client:          form.clientObj.nif,
-      metode_pagament: form.metode_pagament ? parseInt(form.metode_pagament) : null,
-      enviament:       form.tipus === 'retorn' ? false : form.enviament,
-      magatzem:        magFiltrat[0]?.codi_magatzem ?? undefined,
-      paquets: paquets.map(p => ({
-        producte:  p.producteObj.id_producte,
-        preu:      parseFloat(p.producteObj.preu),
-        quantitat: signe * Math.abs(parseInt(p.quantitat) || 1),
-      })),
-    };
-
     setSaving(true); setFormError('');
     try {
-      await createComanda(payload);
+      let clientNif = form.clientObj.nif;
+
+      // Si el client és nou (no desat encara), crear-lo primer en la mateixa transacció
+      if (form.clientObj._isPending) {
+        const { _isPending: _p, ...clientData } = form.clientObj; // eslint-disable-line no-unused-vars
+        const clientRes = await createClient(clientData);
+        clientNif = clientRes.data.nif;
+      }
+
+      await createComanda({
+        client:          clientNif,
+        metode_pagament: form.metode_pagament ? parseInt(form.metode_pagament) : null,
+        enviament:       form.tipus === 'retorn' ? false : form.enviament,
+        magatzem:        magFiltrat[0]?.codi_magatzem ?? undefined,
+        paquets: paquets.map(p => ({
+          producte:  p.producteObj.id_producte,
+          preu:      parseFloat(p.producteObj.preu),
+          quantitat: signe * Math.abs(parseInt(p.quantitat) || 1),
+        })),
+      });
       load({ cerca: cerca || undefined, enviament: enviament || undefined, preparat: preparatFlt || undefined, ordre, ...magFilter });
       setModalNova(false);
     } catch (err) {
       const d = err.response?.data;
-      const msg = d?.paquets?.[0] || d?.id_comanda?.[0] || d?.detail
+      const msg = d?.nif?.[0] || d?.paquets?.[0] || d?.id_comanda?.[0] || d?.detail
         || (typeof d === 'object' ? JSON.stringify(d) : d)
         || 'Error en crear la comanda.';
       setFormError(msg);
     } finally { setSaving(false); }
   }
 
-  async function handlePreparat(id) {
-    try {
-      const res = await marcarPreparat(id);
-      setComandes(prev => prev.map(c => c.id_comanda === id ? res.data : c));
-    } catch {
-      alert("No s'ha pogut marcar la comanda com a preparada.");
+  // Compte quantes comandes preparades (sense factura) hi ha per client a la llista actual
+  const preparedesPerClient = useMemo(() => {
+    const m = {};
+    for (const c of comandes) {
+      if (c.preparat) m[c.client] = (m[c.client] || 0) + 1;
     }
+    return m;
+  }, [comandes]);
+
+  function handlePreparacioFeta(updated) {
+    setComandes(prev => prev.map(c => c.id_comanda === updated.id_comanda ? updated : c));
+    setPreparacioComanda(null);
+  }
+
+  function openConfirmFactura(comanda) {
+    setConfirmFact(comanda);
+    setConfirmMetode(comanda.metode_pagament ? String(comanda.metode_pagament) : '');
+    setFactError('');
+  }
+
+  async function handleConfirmFactura() {
+    const needsMetode = !confirmFact.metode_pagament;
+    if (needsMetode && !confirmMetode) { setFactError('Cal indicar el mètode de pagament.'); return; }
+    setSavingFact(true); setFactError('');
+    try {
+      const payload = { comandes: [confirmFact.id_comanda] };
+      if (needsMetode) payload.metode_pagament = parseInt(confirmMetode);
+      await createFactura(payload);
+      setConfirmFact(null);
+      load({ cerca: cerca || undefined, enviament: enviament || undefined, preparat: preparatFlt || undefined, ordre, ...magFilter });
+    } catch (err) {
+      const d = err.response?.data;
+      setFactError(d?.metode_pagament?.[0] || d?.comandes?.[0] || d?.detail || 'Error en crear la factura.');
+    } finally { setSavingFact(false); }
+  }
+
+  function handleFacturaConjunta(clientNif, clientNom) {
+    navigate('/factures', { state: { novaFactura: true, clientNif, clientNom } });
   }
 
   const previewTotal = paquets.reduce((sum, p) => {
@@ -216,8 +264,11 @@ export default function PrepararComandes() {
         <div className="state-box">No s'han trobat comandes amb aquests filtres.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {comandes.map(c => (
+          {comandes.map(c => {
+            const nOthersPrepared = (preparedesPerClient[c.client] || 0) - 1;
+            return (
             <div key={c.id_comanda} className="comanda-card">
+              {/* Capçalera — clic per expandir */}
               <div className="comanda-header"
                 onClick={() => setExpandida(expandida === c.id_comanda ? null : c.id_comanda)}>
                 <div>
@@ -244,21 +295,46 @@ export default function PrepararComandes() {
                   )}
                   {c.preparat
                     ? <span className="badge badge--green" title={c.preparat_per_nom ? `Preparat per ${c.preparat_per_nom}` : ''}>✅ Preparada</span>
-                    : (
-                      <button
-                        className="btn-sm btn-sm--edit"
-                        style={{ fontSize: '0.78rem' }}
-                        onClick={e => { e.stopPropagation(); handlePreparat(c.id_comanda); }}
-                      >
-                        Preparar
-                      </button>
-                    )
+                    : <span className="badge badge--gray">⏳ Pendent</span>
                   }
                   <span className="comanda-amount">{parseFloat(c.import_total).toFixed(2)} €</span>
                   <span style={{ color: '#aab4be', fontSize: '0.85rem' }}>
                     {expandida === c.id_comanda ? '▲' : '▼'}
                   </span>
                 </div>
+              </div>
+
+              {/* Barra d'accions — fora del clic d'expansió */}
+              <div style={{
+                padding: '10px 18px', borderTop: '1px solid #f0f2f5',
+                background: '#f8f9fb', display: 'flex', gap: 10,
+                justifyContent: 'flex-end', alignItems: 'center',
+              }}>
+                {c.preparat ? (
+                  canInvoice ? (
+                    <>
+                      {nOthersPrepared > 0 && (
+                        <button className="btn-secondary"
+                          onClick={() => handleFacturaConjunta(c.client, c.client_nom)}>
+                          📋 Factura conjunta ({nOthersPrepared + 1} comandes)
+                        </button>
+                      )}
+                      <button className="btn-primary"
+                        onClick={() => openConfirmFactura(c)}>
+                        🧾 Facturar
+                      </button>
+                    </>
+                  ) : (
+                    <span style={{ color: '#aab4be', fontSize: '0.85rem' }}>Preparada — pendent de facturar</span>
+                  )
+                ) : (
+                  <button
+                    className="btn-primary"
+                    style={{ background: '#27ae60', borderColor: '#27ae60' }}
+                    onClick={() => setPreparacioComanda(c)}>
+                    ✓ Marcar com a preparada
+                  </button>
+                )}
               </div>
 
               {expandida === c.id_comanda && (
@@ -299,8 +375,64 @@ export default function PrepararComandes() {
                 )
               )}
             </div>
-          ))}
+          );
+          })}
         </div>
+      )}
+
+      {/* ── Modal confirmació factura ── */}
+      {confirmFact && (
+        <Modal title="Confirmar facturació" onClose={() => setConfirmFact(null)}>
+          <div className="modal-form">
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: '0.9rem', color: '#5d6d7e', marginBottom: 4 }}>Client</div>
+              <strong>{confirmFact.client_nom}</strong>
+              <span className="text-mono" style={{ marginLeft: 8, opacity: 0.55, fontSize: '0.85rem' }}>{confirmFact.client}</span>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: '0.9rem', color: '#5d6d7e', marginBottom: 4 }}>Comanda</div>
+              <span className="text-mono" style={{ fontWeight: 700 }}>{confirmFact.id_comanda}</span>
+              <span style={{ marginLeft: 12, fontWeight: 700, color: '#2c3e50' }}>
+                {parseFloat(confirmFact.import_total).toFixed(2)} €
+              </span>
+            </div>
+            <div className="login-field">
+              <label className="login-label">
+                Mètode de pagament {!confirmFact.metode_pagament && <span style={{ color: '#e74c3c' }}>*</span>}
+              </label>
+              {confirmFact.metode_pagament ? (
+                <div style={{ padding: '8px 0', fontWeight: 600 }}>
+                  {METODE_LABEL[confirmFact.metode_pagament]}
+                </div>
+              ) : (
+                <select className="login-input" value={confirmMetode}
+                  onChange={e => setConfirmMetode(e.target.value)}>
+                  <option value="">— Selecciona un mètode —</option>
+                  <option value="1">💳 Targeta</option>
+                  <option value="2">🏦 Transferència</option>
+                  <option value="3">💵 Efectiu</option>
+                </select>
+              )}
+            </div>
+            {factError && <div className="login-error"><span>⚠️</span> {factError}</div>}
+            <div className="modal-actions">
+              <button type="button" className="btn-secondary" onClick={() => setConfirmFact(null)}>Cancel·lar</button>
+              <button type="button" className="btn-primary" disabled={savingFact} onClick={handleConfirmFactura}>
+                {savingFact ? 'Creant...' : '🧾 Confirmar factura'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Modal preparació (selecció de lots) ── */}
+      {preparacioComanda && (
+        <PreparacioModal
+          comanda={preparacioComanda}
+          magFiltrat={magFiltrat}
+          onClose={() => setPreparacioComanda(null)}
+          onDone={handlePreparacioFeta}
+        />
       )}
 
       {/* ── Modal nova comanda ── */}
@@ -466,10 +598,11 @@ export default function PrepararComandes() {
 
 // ── ClientAutocomplete ────────────────────────────────────────────────────────
 function ClientAutocomplete({ value, onChange, placeholder = 'Cercar per NIF o nom...' }) {
-  const [query, setQuery]     = useState('');
-  const [open, setOpen]       = useState(false);
-  const [options, setOptions] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [query, setQuery]         = useState('');
+  const [open, setOpen]           = useState(false);
+  const [options, setOptions]     = useState([]);
+  const [loading, setLoading]     = useState(false);
+  const [modalNou, setModalNou]   = useState(false);
   const queryDb = useDebounce(query, 300);
   const ref = useRef(null);
 
@@ -488,36 +621,141 @@ function ClientAutocomplete({ value, onChange, placeholder = 'Cercar per NIF o n
       .finally(() => setLoading(false));
   }, [queryDb, open]);
 
-  const displayText = value ? `${value.nom} · ${value.nif}` : '';
-
   return (
-    <div className="mag-auto" ref={ref}>
-      <div className="mag-auto-wrap">
-        <input className="mag-auto-input"
-          placeholder={displayText || placeholder}
-          value={query}
-          onChange={e => { setQuery(e.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)} />
-        {value && (
-          <button type="button" className="mag-auto-clear"
-            onMouseDown={e => { e.stopPropagation(); onChange(null); setQuery(''); setOpen(false); }}>✕</button>
+    <>
+      <div className="mag-auto" ref={ref}>
+        <div className="mag-auto-wrap">
+          <input className="mag-auto-input"
+            placeholder={value ? `${value.nom} · ${value.nif}` : placeholder}
+            value={query}
+            onChange={e => { setQuery(e.target.value); setOpen(true); }}
+            onFocus={() => setOpen(true)} />
+          {value && (
+            <button type="button" className="mag-auto-clear"
+              onMouseDown={e => { e.stopPropagation(); onChange(null); setQuery(''); setOpen(false); }}>✕</button>
+          )}
+        </div>
+        {open && (
+          <div className="mag-auto-dropdown">
+            {loading ? <div className="mag-auto-empty">Carregant...</div>
+              : options.length === 0
+                ? <div className="mag-auto-empty">Cap client trobat</div>
+                : options.map(c => (
+                  <div key={c.nif} className="mag-auto-opt"
+                    onMouseDown={() => { onChange(c); setQuery(''); setOpen(false); }}>
+                    <span className="mag-auto-opt-nom">{c.nom}</span>
+                    <span className="mag-auto-opt-cod text-mono">{c.nif}</span>
+                  </div>
+                ))
+            }
+          </div>
         )}
       </div>
-      {open && (
-        <div className="mag-auto-dropdown">
-          {loading ? <div className="mag-auto-empty">Carregant...</div>
-            : options.length === 0 ? <div className="mag-auto-empty">Cap client trobat</div>
-            : options.map(c => (
-              <div key={c.nif} className="mag-auto-opt"
-                onMouseDown={() => { onChange(c); setQuery(''); setOpen(false); }}>
-                <span className="mag-auto-opt-nom">{c.nom}</span>
-                <span className="mag-auto-opt-cod text-mono">{c.nif}</span>
-              </div>
-            ))
-          }
-        </div>
+      <button type="button"
+        style={{ marginTop: 6, fontSize: '0.82rem', color: '#2980b9', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+        onMouseDown={e => { e.preventDefault(); setOpen(false); setModalNou(true); }}>
+        + Crear client nou
+      </button>
+      {modalNou && (
+        <ClientCreateModal
+          onClose={() => setModalNou(false)}
+          onCreated={client => { onChange(client); setModalNou(false); }}
+        />
       )}
-    </div>
+    </>
+  );
+}
+
+// ── ClientCreateModal ─────────────────────────────────────────────────────────
+// No usa <form> per evitar imbricació amb el formulari exterior de "Nova comanda".
+// No crida l'API: desa el client en memòria amb _isPending:true i s'envia
+// junt amb la comanda quan l'usuari confirmi el formulari principal.
+const EMPTY_CLIENT_FORM = { nif: '', nom: '', correu_electronic: '', tipus: 'individual', telefon: '', adressa: '', enviament: false };
+
+function ClientCreateModal({ onClose, onCreated }) {
+  const [form, setForm] = useState({ ...EMPTY_CLIENT_FORM });
+  const [error, setError] = useState('');
+
+  function handleAfegir() {
+    if (!form.nif.trim() || form.nif.trim().length !== 9) {
+      setError('El NIF ha de tenir exactament 9 caràcters.'); return;
+    }
+    if (!form.nom.trim()) { setError('Cal indicar el nom.'); return; }
+    if (!form.correu_electronic.trim()) { setError('Cal indicar el correu electrònic.'); return; }
+    if (form.tipus === 'individual' && !form.telefon.trim()) {
+      setError('Cal indicar el telèfon.'); return;
+    }
+    if (form.tipus === 'empresa' && !form.adressa.trim()) {
+      setError("Cal indicar l'adreça."); return;
+    }
+    // El client es desa en memòria; l'API es cridarà quan es creï la comanda
+    onCreated({ ...form, nif: form.nif.trim().toUpperCase(), _isPending: true });
+  }
+
+  const f = (field, val) => setForm(prev => ({ ...prev, [field]: val }));
+
+  return (
+    <Modal title="Nou client" onClose={onClose}>
+      <div className="modal-form">
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          {[{ key: 'individual', label: '👤 Particular' }, { key: 'empresa', label: '🏢 Empresa' }].map(t => (
+            <button key={t.key} type="button"
+              onClick={() => f('tipus', t.key)}
+              style={{
+                flex: 1, padding: '10px', borderRadius: 8, border: '2px solid',
+                borderColor: form.tipus === t.key ? '#3498db' : '#e0e6ed',
+                background: form.tipus === t.key ? '#ebf5fb' : '#fff',
+                cursor: 'pointer', fontWeight: 600,
+              }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <Field label="NIF / DNI" required>
+          <input className="login-input" value={form.nif}
+            onChange={e => f('nif', e.target.value.toUpperCase())}
+            placeholder="Ex: 12345678A" maxLength={9} />
+        </Field>
+        <Field label="Nom" required>
+          <input className="login-input" value={form.nom}
+            onChange={e => f('nom', e.target.value)} />
+        </Field>
+        <Field label="Correu electrònic" required>
+          <input className="login-input" type="email" value={form.correu_electronic}
+            onChange={e => f('correu_electronic', e.target.value)} />
+        </Field>
+
+        {form.tipus === 'individual' ? (
+          <Field label="Telèfon" required>
+            <input className="login-input" type="tel" value={form.telefon}
+              onChange={e => f('telefon', e.target.value)} />
+          </Field>
+        ) : (
+          <>
+            <Field label="Adreça" required>
+              <input className="login-input" value={form.adressa}
+                onChange={e => f('adressa', e.target.value)} />
+            </Field>
+            <Field label="">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.enviament}
+                  onChange={e => f('enviament', e.target.checked)} />
+                <span>🚚 Admet enviament a domicili</span>
+              </label>
+            </Field>
+          </>
+        )}
+
+        {error && <div className="login-error"><span>⚠️</span> {error}</div>}
+        <div className="modal-actions">
+          <button type="button" className="btn-secondary" onClick={onClose}>Cancel·lar</button>
+          <button type="button" className="btn-primary" onClick={handleAfegir}>
+            Afegir al formulari
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -575,6 +813,137 @@ function ProducteAutocomplete({ value, onChange, placeholder = 'Cercar producte.
         </div>
       )}
     </div>
+  );
+}
+
+// ── PreparacioModal ───────────────────────────────────────────────────────────
+function PreparacioModal({ comanda, magFiltrat, onClose, onDone }) {
+  const magIds = magFiltrat.map(m => m.codi_magatzem);
+  const paquetsPositius = comanda.paquets.filter(p => p.quantitat > 0);
+
+  const [lotsPerIndex, setLotsPerIndex] = useState({});
+  const [lotSeleccio, setLotSeleccio]   = useState({});
+  const [loading, setLoading]           = useState(true);
+  const [saving, setSaving]             = useState(false);
+  const [error, setError]               = useState('');
+
+  useEffect(() => {
+    if (paquetsPositius.length === 0) { setLoading(false); return; }
+    Promise.all(
+      paquetsPositius.map((p, i) =>
+        getLots({ producte: p.producte, ...(magIds.length > 0 ? { magatzem_filter: magIds } : {}) })
+          .then(res => ({ i, lots: (res.data.results ?? res.data).filter(l => l.quantitat > 0) }))
+      )
+    ).then(results => {
+      const lpi = {};
+      const ls  = {};
+      for (const { i, lots } of results) {
+        lpi[i] = lots;
+        if (lots.length === 1) ls[i] = String(lots[0].id);
+      }
+      setLotsPerIndex(lpi);
+      setLotSeleccio(ls);
+      setLoading(false);
+    }).catch(() => { setError("No s'han pogut carregar els lots."); setLoading(false); });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleConfirm() {
+    for (let i = 0; i < paquetsPositius.length; i++) {
+      if (!lotSeleccio[i]) { setError('Cal seleccionar un lot per a cada producte.'); return; }
+      const lot = (lotsPerIndex[i] || []).find(l => String(l.id) === lotSeleccio[i]);
+      if (lot && lot.quantitat < paquetsPositius[i].quantitat) {
+        setError(`Estoc insuficient per a "${paquetsPositius[i].producte_nom}": ${lot.quantitat} disponibles, ${paquetsPositius[i].quantitat} necessaris.`);
+        return;
+      }
+    }
+    const lotsPayload = paquetsPositius.map((p, i) => ({
+      lot: parseInt(lotSeleccio[i]),
+      quantitat: p.quantitat,
+    }));
+    setSaving(true); setError('');
+    try {
+      const res = await marcarPreparat(comanda.id_comanda, { lots: lotsPayload });
+      onDone(res.data);
+    } catch (err) {
+      const d = err.response?.data;
+      setError(d?.detail || d?.lots?.[0] || 'Error en marcar com a preparada.');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <Modal title="Preparar comanda" onClose={onClose}>
+      <div className="modal-form">
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: '0.9rem', color: '#5d6d7e', marginBottom: 4 }}>Comanda</div>
+          <span className="text-mono" style={{ fontWeight: 700 }}>{comanda.id_comanda}</span>
+          <span style={{ marginLeft: 12, color: '#5d6d7e' }}>{comanda.client_nom}</span>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: '20px 0', textAlign: 'center', color: '#aab4be' }}>Carregant lots...</div>
+        ) : paquetsPositius.length === 0 ? (
+          <div className="alert alert--info">
+            <span>🔄</span>
+            <span>Aquesta comanda és un retorn — no cal seleccionar lots.</span>
+          </div>
+        ) : (
+          <div>
+            <div style={{ marginBottom: 12, fontSize: '0.88rem', color: '#5d6d7e' }}>
+              Indica de quin lot s'ha agafat cada producte:
+            </div>
+            {paquetsPositius.map((p, i) => {
+              const lots   = lotsPerIndex[i] || [];
+              const selId  = lotSeleccio[i] || '';
+              const selLot = lots.find(l => String(l.id) === selId);
+              const enough = selLot ? selLot.quantitat >= p.quantitat : true;
+              return (
+                <div key={i} style={{ background: '#f8f9fa', borderRadius: 8, padding: '12px 14px', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div>
+                      <strong style={{ fontSize: '0.95rem' }}>{p.producte_nom}</strong>
+                      <span className="text-mono" style={{ marginLeft: 8, opacity: 0.5, fontSize: '0.78rem' }}>{p.producte}</span>
+                    </div>
+                    <span className="badge badge--blue">{p.quantitat} u.</span>
+                  </div>
+                  {lots.length === 0 ? (
+                    <div style={{ color: '#e74c3c', fontSize: '0.85rem' }}>⚠️ No hi ha lots disponibles amb estoc.</div>
+                  ) : (
+                    <>
+                      <select className="login-input" value={selId}
+                        onChange={e => setLotSeleccio(prev => ({ ...prev, [i]: e.target.value }))}>
+                        <option value="">— Selecciona un lot —</option>
+                        {lots.map(l => (
+                          <option key={l.id} value={String(l.id)}>
+                            {l.ubicacio_codi} · {l.quantitat} u. disponibles{l.data_entrada ? ` · Entrada: ${l.data_entrada}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {selLot && (
+                        <div style={{ marginTop: 4, fontSize: '0.82rem', color: enough ? '#27ae60' : '#e74c3c' }}>
+                          {enough
+                            ? `✓ Estoc disponible: ${selLot.quantitat} u.`
+                            : `⚠️ Estoc insuficient: ${selLot.quantitat} disponibles, ${p.quantitat} necessaris.`}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {error && <div className="login-error"><span>⚠️</span> {error}</div>}
+        <div className="modal-actions">
+          <button type="button" className="btn-secondary" onClick={onClose}>Cancel·lar</button>
+          <button type="button" className="btn-primary"
+            style={{ background: '#27ae60', borderColor: '#27ae60' }}
+            disabled={saving || loading} onClick={handleConfirm}>
+            {saving ? 'Preparant...' : '✓ Confirmar preparació'}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

@@ -23,8 +23,9 @@ def _user_data(user):
         'last_name':    user.last_name,
         'rol':          perfil.rol if perfil else 'mosso',
         'magatzem':     perfil.magatzem_id if perfil else None,
-        'magatzem_nom': (perfil.magatzem.nom or perfil.magatzem.codi_magatzem)
-                        if perfil and perfil.magatzem else None,
+        'magatzem_nom':  (perfil.magatzem.nom or perfil.magatzem.codi_magatzem)
+                         if perfil and perfil.magatzem else None,
+        'magatzem_codi': perfil.magatzem.codi_magatzem if perfil and perfil.magatzem else None,
     }
 
 

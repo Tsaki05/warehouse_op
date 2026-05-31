@@ -3,6 +3,36 @@ from rest_framework import serializers
 from .models import Client, Empresa, Individual, ClientMagatzem
 
 
+class ClientCreateSerializer(serializers.ModelSerializer):
+    tipus     = serializers.ChoiceField(choices=['empresa', 'individual'], write_only=True)
+    adressa   = serializers.CharField(required=False, allow_blank=True, write_only=True, default='')
+    enviament = serializers.BooleanField(required=False, default=False, write_only=True)
+    telefon   = serializers.CharField(required=False, allow_blank=True, write_only=True, default='')
+
+    class Meta:
+        model  = Client
+        fields = ['nif', 'nom', 'correu_electronic', 'tipus', 'adressa', 'enviament', 'telefon']
+
+    def validate(self, data):
+        if data.get('tipus') == 'empresa' and not data.get('adressa', '').strip():
+            raise serializers.ValidationError({'adressa': "Cal indicar l'adreça per a una empresa."})
+        if data.get('tipus') == 'individual' and not data.get('telefon', '').strip():
+            raise serializers.ValidationError({'telefon': 'Cal indicar el telèfon per a un particular.'})
+        return data
+
+    def create(self, validated_data):
+        tipus     = validated_data.pop('tipus')
+        adressa   = validated_data.pop('adressa', '')
+        enviament = validated_data.pop('enviament', False)
+        telefon   = validated_data.pop('telefon', '')
+        client = Client.objects.create(**validated_data)
+        if tipus == 'empresa':
+            Empresa.objects.create(client=client, adressa=adressa, enviament=enviament)
+        else:
+            Individual.objects.create(client=client, telefon=telefon)
+        return client
+
+
 class EmpresaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Empresa

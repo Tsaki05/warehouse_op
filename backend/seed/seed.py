@@ -22,8 +22,8 @@ PAGAMENTS   = [1, 2, 3]
 MATERIALS = ['Acer', 'Alumini', 'Plàstic', 'Ferro', 'Coure', 'Fusta', 'Vidre', 'Goma', 'Titani', 'Carboni']
 ADJECTIUS  = ['Industrial', 'Tècnic', 'Professional', 'Estàndard', 'Premium', 'Compacte', 'Modular', 'Universal']
 
-def nom_producte(categoria):
-    return f"{random.choice(MATERIALS)} {random.choice(ADJECTIUS)} {codi_alfanumeric(4)} ({categoria})"
+def nom_producte():
+    return f"{random.choice(MATERIALS)} {random.choice(ADJECTIUS)} {codi_alfanumeric(4)} "
 
 
 def codi(n, digits=False):
@@ -102,7 +102,7 @@ def seed(
         cat = random.choice(CATEGORIES)
         p = Producte.objects.create(
             id_producte=codi_numeric(12),
-            nom=nom_producte(cat),
+            nom=nom_producte(),
             descripcio=fake.text(max_nb_chars=150),
             codi_proveidor=codi_alfanumeric(6),
             estoc_total=random.randint(0, 10000),
@@ -138,11 +138,6 @@ def seed(
             adressa=fake.address(),
             enviament=random.choice([True, False]),
         )
-        for m in random.sample(magatzems, k=random.randint(1, min(3, len(magatzems)))):
-            ClientMagatzem.objects.create(
-                client=c, magatzem=m,
-                data_alta=fake.date_between(start_date='-3y', end_date='today'),
-            )
         clients_empresa.append(c)
 
     print("Generant clients individuals...")
@@ -157,11 +152,6 @@ def seed(
             correu_electronic=fake.email(),
         )
         Individual.objects.create(client=c, telefon=fake.phone_number()[:20])
-        for m in random.sample(magatzems, k=random.randint(1, min(2, len(magatzems)))):
-            ClientMagatzem.objects.create(
-                client=c, magatzem=m,
-                data_alta=fake.date_between(start_date='-3y', end_date='today'),
-            )
         clients_individual.append(c)
 
     tots_clients = clients_empresa + clients_individual
@@ -195,6 +185,22 @@ def seed(
                 },
             )
         comandes.append(c)
+
+    # Deriva ClientMagatzem de les comandes reals: un client és client
+    # d'un magatzem si i només si hi té almenys una comanda.
+    print("Derivant associacions client-magatzem des de les comandes...")
+    for c in comandes:
+        mag_ids = (
+            Lot.objects
+            .filter(producte__paquets__comanda=c)
+            .values_list('ubicacio__magatzem_id', flat=True)
+            .distinct()
+        )
+        for mag_id in mag_ids:
+            ClientMagatzem.objects.get_or_create(
+                client_id=c.client_id,
+                magatzem_id=mag_id,
+            )
 
     print("Generant factures...")
     used_ids = set()

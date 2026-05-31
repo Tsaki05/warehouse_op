@@ -71,7 +71,7 @@ function Layout() {
               <div className="sidebar-filter-active">
                 <span>
                   {magFiltrat.length === 1
-                    ? `🏢 ${magFiltrat[0].nom || magFiltrat[0].codi_magatzem}`
+                    ? `🏢 ${magFiltrat[0].nom ? `${magFiltrat[0].nom} (${magFiltrat[0].codi_magatzem})` : magFiltrat[0].codi_magatzem}`
                     : `🏢 ${magFiltrat.length} magatzems`}
                 </span>
                 <button onClick={() => setMagFiltrat([])}>✕</button>
@@ -97,7 +97,12 @@ function Layout() {
             </span>
           </div>
           {user?.magatzem_nom && (
-            <div style={{ fontSize: '0.82rem', opacity: 0.55 }}>🏢 {user.magatzem_nom}</div>
+            <div style={{ fontSize: '0.82rem', opacity: 0.55 }}>
+              🏢 {user.magatzem_nom}
+              {user.magatzem_codi && (
+                <span style={{ marginLeft: 5, fontFamily: 'monospace' }}>({user.magatzem_codi})</span>
+              )}
+            </div>
           )}
           <button className="logout-btn" onClick={logout}>Tancar sessió</button>
         </div>

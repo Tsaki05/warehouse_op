@@ -1,3 +1,7 @@
+import random
+import string
+from datetime import date
+
 from rest_framework import serializers
 from .models import Factura, Comanda, Paquet
 
@@ -10,15 +14,19 @@ class PaquetSerializer(serializers.ModelSerializer):
         fields = ['producte', 'producte_nom', 'quantitat', 'preu']
 
 
-import random
-import string
-
-
 def _generar_id_comanda():
     chars = string.ascii_uppercase + string.digits
     while True:
         codi = ''.join(random.choices(chars, k=5))
         if not Comanda.objects.filter(pk=codi).exists():
+            return codi
+
+
+def _generar_id_factura():
+    chars = string.ascii_uppercase + string.digits
+    while True:
+        codi = ''.join(random.choices(chars, k=5))
+        if not Factura.objects.filter(pk=codi).exists():
             return codi
 
 
@@ -81,9 +89,61 @@ class ComandaSerializer(serializers.ModelSerializer):
 
 
 class FacturaSerializer(serializers.ModelSerializer):
-    client_nom  = serializers.CharField(source='client.nom', read_only=True)
-    n_comandes  = serializers.IntegerField(read_only=True)
+    client_nom = serializers.CharField(source='client.nom', read_only=True)
+    n_comandes = serializers.SerializerMethodField()
 
     class Meta:
         model = Factura
         fields = ['id_factura', 'client', 'client_nom', 'import_total', 'data', 'n_comandes']
+
+    def get_n_comandes(self, obj):
+        if hasattr(obj, 'n_comandes'):
+            return obj.n_comandes
+        return obj.comandes.count()
+
+
+class FacturaCreateSerializer(serializers.Serializer):
+    comandes        = serializers.ListField(child=serializers.CharField(), min_length=1)
+    metode_pagament = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate_comandes(self, ids):
+        qs = list(Comanda.objects.filter(id_comanda__in=ids))
+        if len(qs) != len(set(ids)):
+            raise serializers.ValidationError("Alguna comanda no s'ha trobat.")
+        if any(not c.preparat for c in qs):
+            raise serializers.ValidationError("Totes les comandes han d'estar preparades.")
+        if any(c.factura_id for c in qs):
+            raise serializers.ValidationError("Alguna comanda ja té factura assignada.")
+        if len({c.client_id for c in qs}) > 1:
+            raise serializers.ValidationError("Totes les comandes han de ser del mateix client.")
+        return qs
+
+    def validate(self, data):
+        comandes = data.get('comandes', [])
+        metode   = data.get('metode_pagament')
+        if any(not c.metode_pagament for c in comandes) and not metode:
+            raise serializers.ValidationError(
+                {'metode_pagament': 'Cal indicar el mètode de pagament per a comandes sense assignar.'}
+            )
+        if metode and metode not in (1, 2, 3):
+            raise serializers.ValidationError({'metode_pagament': 'Mètode invàlid.'})
+        return data
+
+    def create(self, validated_data):
+        comandes = validated_data['comandes']
+        metode   = validated_data.get('metode_pagament')
+        if metode:
+            for c in comandes:
+                if not c.metode_pagament:
+                    c.metode_pagament = metode
+                    c.save(update_fields=['metode_pagament'])
+        factura = Factura.objects.create(
+            id_factura=_generar_id_factura(),
+            client_id=comandes[0].client_id,
+            import_total=sum(c.import_total for c in comandes),
+            data=date.today(),
+        )
+        for c in comandes:
+            c.factura = factura
+            c.save(update_fields=['factura'])
+        return factura

@@ -71,8 +71,8 @@ function DashboardAdmin({ magFiltrat }) {
           sub="sense factura assignada" variant="blue" to="/comandes" />
         <StatCard label="Comandes (30 dies)" value={resum.n_comandes_mes.toLocaleString()}
           sub="comandes registrades" variant="green" to="/comandes" />
-        <StatCard label="Facturat (30 dies)" value={`${resum.facturacio_total_mes.toLocaleString('ca', { maximumFractionDigits: 0 })} €`}
-          sub={`${resum.n_factures_mes} factures`} variant="purple" to="/factures" />
+        <StatCard label="Facturat (últim any)" value={`${resum.facturacio_total_any.toLocaleString('ca', { maximumFractionDigits: 0 })} €`}
+          sub={`${resum.n_factures_any} factures`} variant="purple" to="/factures" />
         <StatCard label="Estoc crític" value={ops.baixEstoc.length}
           sub="productes < 25 unitats" variant="orange" to="/productes?baix_estoc=true" />
       </div>
@@ -128,9 +128,9 @@ function DashboardAdmin({ magFiltrat }) {
         <div className="section-card">
           <div className="section-card-header">
             <span className="section-card-title">🏆 Top clients (30 dies)</span>
-            <Link to="/factures" style={{ fontSize: '0.82rem', color: '#3498db', textDecoration: 'none' }}>
-              Veure tots →
-            </Link>
+            <span className="section-card-count">
+              {top_clients.reduce((s, c) => s + c.import_total, 0).toLocaleString('ca', { maximumFractionDigits: 0 })} €
+            </span>
           </div>
           <div className="section-card-body">
             {top_clients.length === 0

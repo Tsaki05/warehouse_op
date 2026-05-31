@@ -2,7 +2,8 @@ from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction
-from django.db.models import Q, Prefetch, RestrictedError
+from django.db.models import Q, Prefetch, RestrictedError, Sum, OuterRef, Subquery, IntegerField
+from django.db.models.functions import Coalesce
 
 from apps.accounts.permissions import IsAdminOrSuperior
 from .models import Magatzem, Ubicacio, Treballador, Producte, Lot
@@ -117,12 +118,15 @@ class ProducteViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
     def get_queryset(self):
-        p  = self.request.query_params
-        qs = Producte.objects.prefetch_related(
-            Prefetch('lots', queryset=Lot.objects.select_related('ubicacio__magatzem'))
-        )
-
+        p       = self.request.query_params
         mag_ids = _mag_id(self.request)
+
+        lots_qs = Lot.objects.select_related('ubicacio__magatzem')
+        if mag_ids:
+            lots_qs = lots_qs.filter(ubicacio__magatzem_id__in=mag_ids)
+
+        qs = Producte.objects.prefetch_related(Prefetch('lots', queryset=lots_qs))
+
         if mag_ids:
             qs = qs.filter(lots__ubicacio__magatzem_id__in=mag_ids).distinct()
 
@@ -136,20 +140,44 @@ class ProducteViewSet(viewsets.ModelViewSet):
                 | Q(lots__ubicacio__passadis__icontains=cerca)
                 | Q(lots__ubicacio__estant__icontains=cerca)
                 | Q(lots__ubicacio__alcada__icontains=cerca)
+                | Q(lots__ubicacio__magatzem__nom__icontains=cerca)
+                | Q(lots__ubicacio__magatzem__codi_magatzem__icontains=cerca)
             ).distinct()
 
-        categoria = p.get('categoria')
-        if categoria:
-            qs = qs.filter(categoria=categoria)
+        categories = p.getlist('categoria')
+        if categories:
+            qs = qs.filter(categoria__in=categories)
 
         if p.get('baix_estoc') == 'true':
-            qs = qs.filter(estoc_total__lt=ESTOC_BAIX)
+            lot_filter = Q(ubicacio__magatzem_id__in=mag_ids) if mag_ids else Q()
+            ids_baix = (
+                Lot.objects
+                .filter(lot_filter)
+                .values('producte_id', 'ubicacio__magatzem_id')
+                .annotate(total=Sum('quantitat'))
+                .filter(total__lt=ESTOC_BAIX)
+                .values_list('producte_id', flat=True)
+                .distinct()
+            )
+            qs = qs.filter(id_producte__in=ids_baix)
 
-        ORDRES = {
-            'nom': 'nom', 'estoc_asc': 'estoc_total',
-            'estoc_desc': '-estoc_total', 'preu_asc': 'preu', 'preu_desc': '-preu',
-        }
-        return qs.order_by(ORDRES.get(p.get('ordre', 'nom'), 'nom'))
+        ordre_param = p.get('ordre', 'nom')
+
+        if ordre_param in ('estoc_asc', 'estoc_desc'):
+            lot_filter = Q(ubicacio__magatzem_id__in=mag_ids) if mag_ids else Q()
+            estoc_sub = Subquery(
+                Lot.objects
+                .filter(lot_filter, producte_id=OuterRef('pk'))
+                .values('producte_id')
+                .annotate(total=Sum('quantitat'))
+                .values('total')[:1],
+                output_field=IntegerField()
+            )
+            qs = qs.annotate(estoc_real=Coalesce(estoc_sub, 0))
+            return qs.order_by('estoc_real' if ordre_param == 'estoc_asc' else '-estoc_real')
+
+        ORDRES = {'nom': 'nom', 'preu_asc': 'preu', 'preu_desc': '-preu'}
+        return qs.order_by(ORDRES.get(ordre_param, 'nom'))
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):

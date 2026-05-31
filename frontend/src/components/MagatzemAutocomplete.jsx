@@ -58,13 +58,15 @@ export default function MagatzemAutocomplete({
 
   const hasValue = multi ? selected.length > 0 : !!value;
 
+  const magLabel = m => m.nom ? `${m.nom} (${m.codi_magatzem})` : m.codi_magatzem;
+
   const displayText = (() => {
     if (multi) {
       if (selected.length === 0) return '';
-      if (selected.length === 1) return selected[0].nom || selected[0].codi_magatzem;
+      if (selected.length === 1) return magLabel(selected[0]);
       return `${selected.length} magatzems`;
     }
-    return value ? (value.nom || value.codi_magatzem) : '';
+    return value ? magLabel(value) : '';
   })();
 
   const showDropdown = open && (filtered.length > 0 || query.length > 0);

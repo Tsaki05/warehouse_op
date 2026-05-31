@@ -37,7 +37,7 @@ export default function Productes() {
   const [expandit, setExpandit]     = useState(null);
 
   const [cerca, setCerca]               = useState('');
-  const [categoria, setCategoria]       = useState('');
+  const [categories, setCategories]     = useState(new Set());
   const [ordre, setOrdre]               = useState('nom');
   const [baixEstocFiltrat, setBaixEstocFiltrat] = useState(
     () => new URLSearchParams(location.search).get('baix_estoc') === 'true'
@@ -61,8 +61,11 @@ export default function Productes() {
   const [magatzemsOpts, setMagatzemsOpts]   = useState([]);
   const [magatzemsLoaded, setMagatzemsLoaded] = useState(false);
 
-  const magIds    = magFiltrat.map(m => m.codi_magatzem);
-  const magFilter = magIds.length > 0 ? { magatzem_filter: magIds } : {};
+  const magIds        = magFiltrat.map(m => m.codi_magatzem);
+  const magFilter     = magIds.length > 0 ? { magatzem_filter: magIds } : {};
+  const rows          = expandPerMag(productes);
+  const baixEstocRows = expandPerMag(baixEstoc).filter(r => r._estoc < 25);
+  const displayRows   = baixEstocFiltrat ? rows.filter(r => r._estoc < 25) : rows;
 
   function ensureMagatzems() {
     if (!isAdmin || magatzemsLoaded) return;
@@ -77,7 +80,7 @@ export default function Productes() {
     setLoading(true);
     getProductes({
       cerca: cercaDb || undefined,
-      categoria: categoria || undefined,
+      categoria: categories.size > 0 ? [...categories] : undefined,
       ordre,
       baix_estoc: baixEstocFiltrat ? 'true' : undefined,
       ...magFilter,
@@ -88,7 +91,7 @@ export default function Productes() {
       })
       .catch(() => setError("No s'ha pogut carregar els productes."))
       .finally(() => setLoading(false));
-  }, [cercaDb, categoria, ordre, baixEstocFiltrat, magFiltrat]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cercaDb, categories, ordre, baixEstocFiltrat, magFiltrat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadProductes(); }, [loadProductes]);
 
@@ -176,11 +179,11 @@ export default function Productes() {
     ensureMagatzems();
   }
 
-  function activarFiltreBaixEstoc(producteId) {
+  function activarFiltreBaixEstoc() {
     setBaixEstocFiltrat(true);
-    setExpandit(producteId);
+    setExpandit(null);
     setCerca('');
-    setCategoria('');
+    setCategories(new Set());
   }
 
   if (error) return <div className="state-box state-box--error">{error}</div>;
@@ -193,26 +196,36 @@ export default function Productes() {
       </div>
 
       {/* ── Alerta estoc baix ── */}
-      {baixEstoc.length > 0 && (
+      {baixEstocRows.length > 0 && (
         <div className="alert alert--warning" style={{ marginBottom: 20 }}>
           <span style={{ fontSize: '1.2rem' }}>⚠️</span>
           <div>
             <strong>
-              {baixEstoc.length} producte{baixEstoc.length > 1 ? 's' : ''} amb estoc crític (&lt;25 u.):
+              {baixEstocRows.length} línia{baixEstocRows.length > 1 ? 'es' : ''} amb estoc crític (&le; 25 unitats):
             </strong>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-              {baixEstoc.map(p => (
+              {baixEstocRows.slice(0, 3).map(row => (
                 <button
-                  key={p.id_producte}
+                  key={row._rowKey}
                   type="button"
                   className="badge badge--red"
                   style={{ cursor: 'pointer', border: 'none' }}
-                  onClick={() => activarFiltreBaixEstoc(p.id_producte)}
+                  onClick={() => activarFiltreBaixEstoc()}
                   title="Clica per filtrar estoc crític"
                 >
-                  {p.nom} — {p.estoc_total} u.
+                  {row.nom}{row._magatzem_nom ? ` · ${row._magatzem_nom}` : ''} — {row._estoc} u.
                 </button>
               ))}
+              {baixEstocRows.length > 3 && (
+                <button
+                  type="button"
+                  className="badge badge--red"
+                  style={{ cursor: 'pointer', border: 'none' }}
+                  onClick={() => activarFiltreBaixEstoc()}
+                >
+                  +{baixEstocRows.length - 3} més...
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -222,8 +235,8 @@ export default function Productes() {
       <div className="search-controls">
         <div className="search-bar" style={{ flex: 1 }}>
           <input className="search-input"
-            placeholder="Cercar per nom, codi, proveïdor, descripció o ubicació..."
-            value={cerca} onChange={e => { setCerca(e.target.value); setBaixEstocFiltrat(false); }} autoFocus />
+            placeholder="Cercar per nom, codi, proveïdor, descripció, ubicació o magatzem..."
+            value={cerca} onChange={e => { setCerca(e.target.value); setBaixEstocFiltrat(false); setCategories(new Set()); }} autoFocus />
           {cerca && <button type="button" className="search-clear" onClick={() => setCerca('')}>✕</button>}
           {loading && cerca && <span style={{ padding: '0 12px', color: '#aab4be', fontSize: '0.85rem' }}>⟳</span>}
         </div>
@@ -239,15 +252,17 @@ export default function Productes() {
       </div>
 
       <div className="filter-bar">
-        <button
-          className={`filter-btn${!categoria && !baixEstocFiltrat ? ' filter-btn--active' : ''}`}
-          onClick={() => { setCategoria(''); setBaixEstocFiltrat(false); }}>
-          Totes
-        </button>
         {CATEGORIES.map(c => (
           <button key={c}
-            className={`filter-btn${categoria === c && !baixEstocFiltrat ? ' filter-btn--active' : ''}`}
-            onClick={() => { setCategoria(c); setBaixEstocFiltrat(false); }}>
+            className={`filter-btn${categories.has(c) && !baixEstocFiltrat ? ' filter-btn--active' : ''}`}
+            onClick={() => {
+              setBaixEstocFiltrat(false);
+              setCategories(prev => {
+                const next = new Set(prev);
+                next.has(c) ? next.delete(c) : next.add(c);
+                return next;
+              });
+            }}>
             {CAT_LABEL[c]}
           </button>
         ))}
@@ -288,42 +303,54 @@ export default function Productes() {
               </tr>
             </thead>
             <tbody>
-              {productes.map(p => (
-                <>
-                  <tr key={p.id_producte} style={{ cursor: 'pointer', opacity: loading ? 0.5 : 1 }}
-                    onClick={() => setExpandit(expandit === p.id_producte ? null : p.id_producte)}>
+              {displayRows.flatMap(row => {
+                const mainRow = (
+                  <tr
+                    key={row._rowKey}
+                    style={{ cursor: 'pointer', opacity: loading ? 0.5 : 1 }}
+                    onClick={() => setExpandit(expandit === row._rowKey ? null : row._rowKey)}
+                  >
                     <td>
-                      <div style={{ fontWeight: 600 }}>{p.nom}</div>
-                      {p.descripcio && (
+                      <div style={{ fontWeight: 600 }}>{row.nom}</div>
+                      {row._magatzem_nom && (
+                        <span style={{
+                          display: 'inline-block', background: '#eaf4fb', color: '#2980b9',
+                          borderRadius: 4, padding: '1px 6px', fontSize: '0.72rem',
+                          fontWeight: 600, marginTop: 3,
+                        }}>{row._magatzem_nom}</span>
+                      )}
+                      {row.descripcio && (
                         <div style={{ fontSize: '0.82rem', color: '#7f8c8d', marginTop: 2 }}>
-                          {p.descripcio.length > 80 ? p.descripcio.slice(0, 80) + '…' : p.descripcio}
+                          {row.descripcio.length > 80 ? row.descripcio.slice(0, 80) + '…' : row.descripcio}
                         </div>
                       )}
                     </td>
-                    <td className="text-mono">{p.id_producte}</td>
-                    <td className="text-mono">{p.codi_proveidor}</td>
-                    <td><span className={`badge badge--${CAT_BADGE[p.categoria]}`}>{CAT_LABEL[p.categoria]}</span></td>
+                    <td className="text-mono">{row.id_producte}</td>
+                    <td className="text-mono">{row.codi_proveidor}</td>
+                    <td><span className={`badge badge--${CAT_BADGE[row.categoria]}`}>{CAT_LABEL[row.categoria]}</span></td>
                     <td>
-                      <span style={{ fontWeight: 700, color: p.estoc_total < 25 ? '#e74c3c' : '#27ae60' }}>
-                        {p.estoc_total.toLocaleString()}
+                      <span style={{ fontWeight: 700, color: row._estoc < 25 ? '#e74c3c' : '#27ae60' }}>
+                        {row._estoc.toLocaleString()}
                       </span>
-                      {p.estoc_total < 25 && ' ⚠️'}
+                      {row._estoc < 25 && ' ⚠️'}
                     </td>
-                    <td>{parseFloat(p.preu).toFixed(2)} €</td>
+                    <td>{parseFloat(row.preu).toFixed(2)} €</td>
                     <td style={{ color: '#aab4be', fontSize: '0.85rem', textAlign: 'right' }}>
-                      {expandit === p.id_producte ? '▲' : '▼'}
+                      {expandit === row._rowKey ? '▲' : '▼'}
                     </td>
                   </tr>
-                  {expandit === p.id_producte && (
-                    <tr key={`${p.id_producte}-det`}>
-                      <td colSpan={7} style={{ background: '#fafbfc', padding: 0 }}>
-                        <LotsDetall lots={p.lots} canEdit={canEdit}
-                          onAfegirLot={() => openModalLot(p.id_producte)} />
-                      </td>
-                    </tr>
-                  )}
-                </>
-              ))}
+                );
+                if (expandit !== row._rowKey) return [mainRow];
+                return [
+                  mainRow,
+                  <tr key={`${row._rowKey}-det`}>
+                    <td colSpan={7} style={{ background: '#fafbfc', padding: 0 }}>
+                      <LotsDetall lots={row._lots} canEdit={canEdit}
+                        onAfegirLot={() => openModalLot(row.id_producte)} />
+                    </td>
+                  </tr>,
+                ];
+              })}
             </tbody>
           </table>
         </div>
@@ -487,6 +514,35 @@ export default function Productes() {
       )}
     </div>
   );
+}
+
+function expandPerMag(productes) {
+  const rows = [];
+  for (const p of productes) {
+    const mags = p.estoc_per_magatzem ?? [];
+    if (mags.length === 0) {
+      rows.push({
+        ...p,
+        _rowKey:      p.id_producte,
+        _magatzem_id: null,
+        _magatzem_nom: null,
+        _lots:        p.lots ?? [],
+        _estoc:       p.estoc_total,
+      });
+    } else {
+      for (const mag of mags) {
+        rows.push({
+          ...p,
+          _rowKey:      `${p.id_producte}__${mag.magatzem_id}`,
+          _magatzem_id: mag.magatzem_id,
+          _magatzem_nom: mag.magatzem_nom,
+          _lots:        (p.lots ?? []).filter(l => l.magatzem_id === mag.magatzem_id),
+          _estoc:       mag.estoc,
+        });
+      }
+    }
+  }
+  return rows;
 }
 
 // ── UbicacioPicker: admin veu magatzem + ubicació, altres només ubicació ──────
