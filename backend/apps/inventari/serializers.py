@@ -8,6 +8,10 @@ class MagatzemSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class MagatzemCreateSerializer(serializers.Serializer):
+    nom = serializers.CharField(max_length=100, required=True)
+
+
 class UbicacioSerializer(serializers.ModelSerializer):
     magatzem_nom = serializers.CharField(source='magatzem.nom', read_only=True)
 

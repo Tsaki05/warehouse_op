@@ -1,7 +1,3 @@
-import random
-import string
-from datetime import date
-
 from rest_framework import serializers
 from .models import Factura, Comanda, Paquet
 
@@ -10,24 +6,8 @@ class PaquetSerializer(serializers.ModelSerializer):
     producte_nom = serializers.CharField(source='producte.nom', read_only=True)
 
     class Meta:
-        model = Paquet
+        model  = Paquet
         fields = ['producte', 'producte_nom', 'quantitat', 'preu']
-
-
-def _generar_id_comanda():
-    chars = string.ascii_uppercase + string.digits
-    while True:
-        codi = ''.join(random.choices(chars, k=5))
-        if not Comanda.objects.filter(pk=codi).exists():
-            return codi
-
-
-def _generar_id_factura():
-    chars = string.ascii_uppercase + string.digits
-    while True:
-        codi = ''.join(random.choices(chars, k=5))
-        if not Factura.objects.filter(pk=codi).exists():
-            return codi
 
 
 class PaquetWriteSerializer(serializers.ModelSerializer):
@@ -56,17 +36,6 @@ class ComandaCreateSerializer(serializers.ModelSerializer):
             )
         return value
 
-    def create(self, validated_data):
-        paquets_data = validated_data.pop('paquets')
-        import_total = sum(p['quantitat'] * p['preu'] for p in paquets_data)
-        comanda = Comanda.objects.create(
-            **validated_data,
-            id_comanda=_generar_id_comanda(),
-            import_total=import_total,
-        )
-        Paquet.objects.bulk_create([Paquet(comanda=comanda, **p) for p in paquets_data])
-        return comanda
-
 
 class ComandaSerializer(serializers.ModelSerializer):
     paquets          = PaquetSerializer(many=True, read_only=True)
@@ -74,7 +43,7 @@ class ComandaSerializer(serializers.ModelSerializer):
     preparat_per_nom = serializers.SerializerMethodField()
 
     class Meta:
-        model = Comanda
+        model  = Comanda
         fields = [
             'id_comanda', 'client', 'client_nom', 'data',
             'factura', 'metode_pagament', 'enviament', 'import_total', 'paquets',
@@ -93,7 +62,7 @@ class FacturaSerializer(serializers.ModelSerializer):
     n_comandes = serializers.SerializerMethodField()
 
     class Meta:
-        model = Factura
+        model  = Factura
         fields = ['id_factura', 'client', 'client_nom', 'import_total', 'data', 'n_comandes']
 
     def get_n_comandes(self, obj):
@@ -128,22 +97,3 @@ class FacturaCreateSerializer(serializers.Serializer):
         if metode and metode not in (1, 2, 3):
             raise serializers.ValidationError({'metode_pagament': 'Mètode invàlid.'})
         return data
-
-    def create(self, validated_data):
-        comandes = validated_data['comandes']
-        metode   = validated_data.get('metode_pagament')
-        if metode:
-            for c in comandes:
-                if not c.metode_pagament:
-                    c.metode_pagament = metode
-                    c.save(update_fields=['metode_pagament'])
-        factura = Factura.objects.create(
-            id_factura=_generar_id_factura(),
-            client_id=comandes[0].client_id,
-            import_total=sum(c.import_total for c in comandes),
-            data=date.today(),
-        )
-        for c in comandes:
-            c.factura = factura
-            c.save(update_fields=['factura'])
-        return factura

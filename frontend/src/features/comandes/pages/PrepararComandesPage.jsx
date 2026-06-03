@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { useFilter } from '../contexts/FilterContext';
-import { getComandes, getClients, getProductes, getLots, createComanda, marcarPreparat, createFactura, createClient } from '../api/api';
-import { useDebounce } from '../hooks/useDebounce';
+import { useAuth } from '../../auth/context/AuthContext';
+import { useFilter } from '../../../shared/contexts/FilterContext';
+import { getComandes, createComanda, marcarPreparat, createFactura } from '../api/comandesApi';
+import { getProductes, getLots } from '../../inventari/api/inventariApi';
+import { getClients, createClient } from '../../clients/api/clientsApi';
+import { useDebounce } from '../../../shared/hooks/useDebounce';
 
 const METODE_LABEL = { 1: 'Targeta', 2: 'Transferència', 3: 'Efectiu' };
 const METODE_BADGE = { 1: 'blue',    2: 'green',          3: 'orange' };

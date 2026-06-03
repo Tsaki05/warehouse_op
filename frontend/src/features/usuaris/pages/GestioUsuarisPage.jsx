@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { getUsuaris, getMagatzems, createUsuari, updateUsuari, deleteUsuari, canviarPassword } from '../api/api';
-import PasswordInput from '../components/PasswordInput';
-import MagatzemAutocomplete from '../components/MagatzemAutocomplete';
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../../auth/context/AuthContext';
+import { getUsuaris, createUsuari, updateUsuari, deleteUsuari, canviarPassword } from '../api/usuarisApi';
+import { getMagatzems } from '../../inventari/api/inventariApi';
+import PasswordInput from '../../../shared/components/PasswordInput';
+import MagatzemAutocomplete from '../../inventari/components/MagatzemAutocomplete';
 
 const ROL_LABEL  = { admin: 'Admin', superior: 'Superior', mosso: 'Mosso' };
 const ROL_BADGE  = { admin: 'purple', superior: 'blue', mosso: 'green' };
@@ -16,27 +17,29 @@ export default function GestioUsuaris() {
   const isAdmin               = me?.rol === 'admin';
 
   const [usuaris, setUsuaris]         = useState([]);
-  const [magatzems, setMagatzems]     = useState([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState(null);
 
   // modal state
   const [modal, setModal]         = useState(null); // 'create' | 'edit' | 'password' | 'delete'
-  const [selected, setSelected]   = useState(null); // user being edited/deleted
+  const [selected, setSelected]   = useState(null);
   const [form, setForm]           = useState(EMPTY_FORM);
+  const [magatzemObj, setMagatzemObj] = useState(null); // objecte complet per a l'autocomplete
   const [pwdForm, setPwdForm]     = useState({ password: '', confirm: '' });
   const [saving, setSaving]       = useState(false);
   const [formError, setFormError] = useState('');
 
+  const fetchMagatzems = useCallback(
+    q => getMagatzems({ cerca: q || undefined, page_size: 50 })
+           .then(r => r.data.results ?? r.data),
+    []
+  );
+
   useEffect(() => {
-    Promise.all([getUsuaris(), isAdmin ? getMagatzems() : Promise.resolve({ data: { results: [] } })])
-      .then(([u, m]) => {
-        setUsuaris(u.data);
-        setMagatzems(m.data.results ?? m.data);
-        setLoading(false);
-      })
+    getUsuaris()
+      .then(u => { setUsuaris(u.data); setLoading(false); })
       .catch(() => { setError('No s\'ha pogut carregar la llista d\'usuaris.'); setLoading(false); });
-  }, [isAdmin]);
+  }, []);
 
   function reload() {
     getUsuaris().then(r => setUsuaris(r.data));
@@ -45,6 +48,7 @@ export default function GestioUsuaris() {
   // ── open modals ────────────────────────────────────────────────────────────
   function openCreate() {
     setForm({ ...EMPTY_FORM, magatzem: isAdmin ? '' : (me.magatzem ?? '') });
+    setMagatzemObj(isAdmin ? null : (me.magatzem ? { codi_magatzem: me.magatzem, nom: me.magatzem_nom || '' } : null));
     setFormError('');
     setModal('create');
   }
@@ -58,6 +62,7 @@ export default function GestioUsuaris() {
       rol:        u.rol,
       magatzem:   u.magatzem ?? '',
     });
+    setMagatzemObj(u.magatzem ? { codi_magatzem: u.magatzem, nom: u.magatzem_nom || '' } : null);
     setFormError('');
     setModal('edit');
   }
@@ -71,7 +76,7 @@ export default function GestioUsuaris() {
     setSelected(u);
     setModal('delete');
   }
-  function closeModal() { setModal(null); setSelected(null); setFormError(''); }
+  function closeModal() { setModal(null); setSelected(null); setFormError(''); setMagatzemObj(null); }
 
   // ── submit handlers ────────────────────────────────────────────────────────
   async function handleCreate(e) {
@@ -231,9 +236,9 @@ export default function GestioUsuaris() {
               {isAdmin && (
                 <Field label="Magatzem">
                   <MagatzemAutocomplete
-                    magatzems={magatzems}
-                    value={form.magatzem ? (magatzems.find(m => m.codi_magatzem === form.magatzem) ?? null) : null}
-                    onChange={m => setForm(f => ({ ...f, magatzem: m?.codi_magatzem || '' }))}
+                    fetchOptions={fetchMagatzems}
+                    value={magatzemObj}
+                    onChange={m => { setMagatzemObj(m); setForm(f => ({ ...f, magatzem: m?.codi_magatzem || '' })); }}
                     placeholder="— Sense magatzem —"
                   />
                 </Field>
