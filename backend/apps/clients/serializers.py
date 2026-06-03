@@ -20,18 +20,6 @@ class ClientCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'telefon': 'Cal indicar el telèfon per a un particular.'})
         return data
 
-    def create(self, validated_data):
-        tipus     = validated_data.pop('tipus')
-        adressa   = validated_data.pop('adressa', '')
-        enviament = validated_data.pop('enviament', False)
-        telefon   = validated_data.pop('telefon', '')
-        client = Client.objects.create(**validated_data)
-        if tipus == 'empresa':
-            Empresa.objects.create(client=client, adressa=adressa, enviament=enviament)
-        else:
-            Individual.objects.create(client=client, telefon=telefon)
-        return client
-
 
 class EmpresaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -79,7 +67,6 @@ class ClientMagatzemBreu(serializers.ModelSerializer):
 
 
 class ClientListSerializer(serializers.ModelSerializer):
-    """Serialitzador lleuger per al llistat (sense stats de magatzem)."""
     empresa          = EmpresaSerializer(read_only=True)
     individual       = IndividualSerializer(read_only=True)
     tipus            = serializers.SerializerMethodField()
@@ -98,7 +85,6 @@ class ClientListSerializer(serializers.ModelSerializer):
 
 
 class ClientSerializer(serializers.ModelSerializer):
-    """Serialitzador complet per al detall d'un client (inclou stats)."""
     empresa          = EmpresaSerializer(read_only=True)
     individual       = IndividualSerializer(read_only=True)
     tipus            = serializers.SerializerMethodField()

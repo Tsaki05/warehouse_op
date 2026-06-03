@@ -1,59 +1,54 @@
 from rest_framework import viewsets, status
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.db import transaction
 from django.db.models import Q, Prefetch, RestrictedError, Sum, OuterRef, Subquery, IntegerField
+from django.db import IntegrityError
 from django.db.models.functions import Coalesce
 
-from apps.accounts.permissions import IsAdminOrSuperior
+from apps.accounts.permissions import IsAdmin, IsAdminOrSuperior
 from .models import Magatzem, Ubicacio, Treballador, Producte, Lot
 from .serializers import (
-    MagatzemSerializer, UbicacioSerializer,
+    MagatzemSerializer, MagatzemCreateSerializer, UbicacioSerializer,
     TreballadorSerializer, ProducteSerializer, LotSerializer,
 )
+from .utils import get_mag_ids
+from . import services as InventariService
 
 ESTOC_BAIX = 25
 
 
-def _mag_id(request):
-    """
-    Retorna una llista de magatzem_ids per filtrar, o None (veu tot):
-    - mosso/superior → [el seu magatzem_id] (obligatori)
-    - admin + ?magatzem_filter=A&magatzem_filter=B → [A, B] (opcional, multi)
-    - admin sense filtre → None (veu tot)
-    """
-    perfil = getattr(request.user, 'perfil', None)
-    if not perfil:
-        return None
-    if perfil.rol == 'admin':
-        ids = request.query_params.getlist('magatzem_filter')
-        return ids or None
-    if perfil.rol in ('superior', 'mosso') and perfil.magatzem_id:
-        return [str(perfil.magatzem_id)]
-    return None
-
-
-def _superior_for_mag(magatzem):
-    """Primer treballador superior del magatzem per assignar als lots."""
-    return Treballador.objects.filter(magatzem=magatzem, superior=True).first()
-
-
-class MagatzemViewSet(viewsets.ReadOnlyModelViewSet):
+class MagatzemViewSet(viewsets.ModelViewSet):
     serializer_class = MagatzemSerializer
+    http_method_names = ['get', 'post', 'head', 'options']
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [IsAdmin()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
-        mag_ids = _mag_id(self.request)
+        mag_ids = get_mag_ids(self.request)
         qs = Magatzem.objects.all()
         if mag_ids:
             qs = qs.filter(pk__in=mag_ids)
-        return qs
+        cerca = self.request.query_params.get('cerca', '').strip()
+        if cerca:
+            qs = qs.filter(Q(nom__icontains=cerca) | Q(codi_magatzem__icontains=cerca))
+        return qs.order_by('nom', 'codi_magatzem')
+
+    def create(self, request, *args, **kwargs):
+        serializer = MagatzemCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        magatzem = InventariService.crear_magatzem(serializer.validated_data['nom'])
+        return Response(MagatzemSerializer(magatzem).data, status=status.HTTP_201_CREATED)
 
 
 class UbicacioViewSet(viewsets.ModelViewSet):
     serializer_class = UbicacioSerializer
 
     def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+        if self.action in ('create', 'update', 'partial_update', 'destroy', 'bulk_create'):
             return [IsAdminOrSuperior()]
         return [IsAuthenticated()]
 
@@ -61,7 +56,7 @@ class UbicacioViewSet(viewsets.ModelViewSet):
         p = self.request.query_params
         qs = Ubicacio.objects.select_related('magatzem')
 
-        mag_ids = _mag_id(self.request)
+        mag_ids = get_mag_ids(self.request)
         magatzem_param = p.get('magatzem')
         if mag_ids:
             qs = qs.filter(magatzem_id__in=mag_ids)
@@ -90,19 +85,38 @@ class UbicacioViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def perform_create(self, serializer):
-        mag_ids = _mag_id(self.request)
+        mag_ids = get_mag_ids(self.request)
         if mag_ids and len(mag_ids) == 1 and 'magatzem' not in self.request.data:
             magatzem = Magatzem.objects.get(pk=mag_ids[0])
             serializer.save(magatzem=magatzem)
         else:
             serializer.save()
 
+    @action(detail=False, methods=['post'], url_path='bulk')
+    def bulk_create(self, request):
+        magatzem_id  = request.data.get('magatzem')
+        passadis     = (request.data.get('passadis') or '').strip().upper()
+        combinacions = request.data.get('combinacions', [])
+
+        if not magatzem_id or not passadis or not combinacions:
+            return Response(
+                {'detail': 'Cal indicar magatzem, passadís i almenys una combinació.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            n = InventariService.crear_ubicacions_bulk(magatzem_id, passadis, combinacions)
+            return Response({'created': n}, status=status.HTTP_201_CREATED)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except IntegrityError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 
 class TreballadorViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = TreballadorSerializer
 
     def get_queryset(self):
-        mag_ids = _mag_id(self.request)
+        mag_ids = get_mag_ids(self.request)
         qs = Treballador.objects.select_related('magatzem')
         if mag_ids:
             qs = qs.filter(magatzem_id__in=mag_ids)
@@ -119,7 +133,7 @@ class ProducteViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         p       = self.request.query_params
-        mag_ids = _mag_id(self.request)
+        mag_ids = get_mag_ids(self.request)
 
         lots_qs = Lot.objects.select_related('ubicacio__magatzem')
         if mag_ids:
@@ -179,9 +193,8 @@ class ProducteViewSet(viewsets.ModelViewSet):
         ORDRES = {'nom': 'nom', 'preu_asc': 'preu', 'preu_desc': '-preu'}
         return qs.order_by(ORDRES.get(ordre_param, 'nom'))
 
-    @transaction.atomic
     def create(self, request, *args, **kwargs):
-        data = {k: v for k, v in request.data.items() if k != 'lots'}
+        data      = {k: v for k, v in request.data.items() if k != 'lots'}
         lots_data = request.data.get('lots', [])
 
         if not lots_data:
@@ -192,30 +205,15 @@ class ProducteViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
-        producte = serializer.save()
 
-        for lot_d in lots_data:
-            try:
-                ubicacio = Ubicacio.objects.select_related('magatzem').get(
-                    pk=lot_d.get('ubicacio')
-                )
-            except Ubicacio.DoesNotExist:
-                raise Exception(f"Ubicació {lot_d.get('ubicacio')} no trobada.")
-
-            superior = _superior_for_mag(ubicacio.magatzem)
-            if not superior:
-                raise Exception(f"No hi ha superior al magatzem {ubicacio.magatzem.nom}.")
-
-            Lot.objects.create(
-                producte=producte,
-                ubicacio=ubicacio,
-                superior=superior,
-                quantitat=lot_d.get('quantitat', 1),
+        try:
+            producte = InventariService.crear_producte_amb_lots(
+                serializer.validated_data, lots_data
             )
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        producte.refresh_from_db()
-        out = ProducteSerializer(producte)
-        return Response(out.data, status=status.HTTP_201_CREATED)
+        return Response(ProducteSerializer(producte).data, status=status.HTTP_201_CREATED)
 
 
 class LotViewSet(viewsets.ModelViewSet):
@@ -229,7 +227,7 @@ class LotViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Lot.objects.select_related('ubicacio__magatzem', 'producte', 'superior')
 
-        mag_ids = _mag_id(self.request)
+        mag_ids = get_mag_ids(self.request)
         if mag_ids:
             qs = qs.filter(ubicacio__magatzem_id__in=mag_ids)
 
@@ -238,11 +236,8 @@ class LotViewSet(viewsets.ModelViewSet):
             qs = qs.filter(producte_id=producte)
         return qs
 
-    @transaction.atomic
     def perform_create(self, serializer):
-        """Auto-assign the magatzem's superior if not provided."""
         ubicacio = serializer.validated_data.get('ubicacio')
         superior = serializer.validated_data.get('superior')
-        if not superior and ubicacio:
-            superior = _superior_for_mag(ubicacio.magatzem)
+        superior = InventariService.resolve_lot_superior(ubicacio, superior)
         serializer.save(superior=superior)

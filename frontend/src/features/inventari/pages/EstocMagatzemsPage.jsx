@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getMagatzems, getProductes } from '../api/api';
+import { getMagatzems, getProductes } from '../api/inventariApi';
 
 const CATEGORIES = ['petit', 'mitja', 'gran', 'gegant'];
 

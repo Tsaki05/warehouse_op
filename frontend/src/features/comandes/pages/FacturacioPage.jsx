@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { getClients, getClientDetail, getFactures, getComandes, createFactura } from '../api/api';
-import { useAuth } from '../contexts/AuthContext';
-import { useDebounce } from '../hooks/useDebounce';
-import { useFilter } from '../contexts/FilterContext';
+import { getFactures, getComandes, createFactura } from '../api/comandesApi';
+import { getClients, getClientDetail } from '../../clients/api/clientsApi';
+import { useAuth } from '../../auth/context/AuthContext';
+import { useDebounce } from '../../../shared/hooks/useDebounce';
+import { useFilter } from '../../../shared/contexts/FilterContext';
 
 const TIPUS_CLIENTS = [
   { key: '',           label: 'Tots' },

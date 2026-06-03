@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import PasswordInput from '../components/PasswordInput';
+import { useAuth } from '../context/AuthContext';
+import PasswordInput from '../../../shared/components/PasswordInput';
 import './Login.css';
 
 export default function Login() {

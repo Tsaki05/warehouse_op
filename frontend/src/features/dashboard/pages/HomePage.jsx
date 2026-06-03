@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { useFilter } from '../contexts/FilterContext';
-import { getComandes, getMagatzems, getProductes, getDashboard } from '../api/api';
+import { useAuth } from '../../auth/context/AuthContext';
+import { useFilter } from '../../../shared/contexts/FilterContext';
+import { getComandes, getDashboard } from '../../comandes/api/comandesApi';
+import { getMagatzems, getProductes } from '../../inventari/api/inventariApi';
 
 export default function Home() {
   const { user }       = useAuth();

@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { useFilter } from '../contexts/FilterContext';
-import { getMagatzems, getProductes, getUbicacions, createProducte, createLot } from '../api/api';
-import { useDebounce } from '../hooks/useDebounce';
+import { useAuth } from '../../auth/context/AuthContext';
+import { useFilter } from '../../../shared/contexts/FilterContext';
+import { getMagatzems, getProductes, getUbicacions, createProducte, createLot } from '../api/inventariApi';
+import { useDebounce } from '../../../shared/hooks/useDebounce';
 import MagatzemAutocomplete from '../components/MagatzemAutocomplete';
 
 const CATEGORIES = ['petit', 'mitja', 'gran', 'gegant'];
