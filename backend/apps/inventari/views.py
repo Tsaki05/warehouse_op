@@ -2,15 +2,15 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.db.models import Q, Prefetch, RestrictedError, Sum, OuterRef, Subquery, IntegerField
+from django.db.models import Q, Prefetch, RestrictedError, ProtectedError, Sum, OuterRef, Subquery, IntegerField
 from django.db import IntegrityError
 from django.db.models.functions import Coalesce
 
 from apps.accounts.permissions import IsAdmin, IsAdminOrSuperior
-from .models import Magatzem, Ubicacio, Treballador, Producte, Lot
+from .models import Magatzem, Ubicacio, Producte, Lot
 from .serializers import (
     MagatzemSerializer, MagatzemCreateSerializer, UbicacioSerializer,
-    TreballadorSerializer, ProducteSerializer, LotSerializer,
+    ProducteSerializer, LotSerializer,
 )
 from .utils import get_mag_ids
 from . import services as InventariService
@@ -20,12 +20,23 @@ ESTOC_BAIX = 25
 
 class MagatzemViewSet(viewsets.ModelViewSet):
     serializer_class = MagatzemSerializer
-    http_method_names = ['get', 'post', 'head', 'options']
+    http_method_names = ['get', 'post', 'delete', 'head', 'options']
 
     def get_permissions(self):
-        if self.action == 'create':
+        if self.action in ('create', 'destroy'):
             return [IsAdmin()]
         return [IsAuthenticated()]
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            self.perform_destroy(instance)
+        except (RestrictedError, ProtectedError):
+            return Response(
+                {'detail': 'No es pot eliminar: el magatzem té lots de productes assignats.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     def get_queryset(self):
         mag_ids = get_mag_ids(self.request)
@@ -112,16 +123,6 @@ class UbicacioViewSet(viewsets.ModelViewSet):
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class TreballadorViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = TreballadorSerializer
-
-    def get_queryset(self):
-        mag_ids = get_mag_ids(self.request)
-        qs = Treballador.objects.select_related('magatzem')
-        if mag_ids:
-            qs = qs.filter(magatzem_id__in=mag_ids)
-        return qs
-
 
 class ProducteViewSet(viewsets.ModelViewSet):
     serializer_class = ProducteSerializer
@@ -167,11 +168,10 @@ class ProducteViewSet(viewsets.ModelViewSet):
             ids_baix = (
                 Lot.objects
                 .filter(lot_filter)
-                .values('producte_id', 'ubicacio__magatzem_id')
+                .values('producte_id')
                 .annotate(total=Sum('quantitat'))
                 .filter(total__lt=ESTOC_BAIX)
                 .values_list('producte_id', flat=True)
-                .distinct()
             )
             qs = qs.filter(id_producte__in=ids_baix)
 
@@ -225,7 +225,7 @@ class LotViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
     def get_queryset(self):
-        qs = Lot.objects.select_related('ubicacio__magatzem', 'producte', 'superior')
+        qs = Lot.objects.select_related('ubicacio__magatzem', 'producte', 'superior__user')
 
         mag_ids = get_mag_ids(self.request)
         if mag_ids:

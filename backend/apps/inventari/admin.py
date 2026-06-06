@@ -1,15 +1,11 @@
 from django.contrib import admin
-from .models import Magatzem, Ubicacio, Treballador, Producte, Lot
+from .models import Magatzem, Ubicacio, Producte, Lot
 
 
 @admin.register(Magatzem)
 class MagatzemAdmin(admin.ModelAdmin):
-    list_display  = ['codi_magatzem', 'nom', 'num_treballadors', 'num_ubicacions']
+    list_display  = ['codi_magatzem', 'nom', 'num_ubicacions']
     search_fields = ['codi_magatzem', 'nom']
-
-    def num_treballadors(self, obj):
-        return obj.treballadors.count()
-    num_treballadors.short_description = 'Treballadors'
 
     def num_ubicacions(self, obj):
         return obj.ubicacions.count()
@@ -23,17 +19,6 @@ class UbicacioAdmin(admin.ModelAdmin):
     search_fields = ['magatzem__codi_magatzem', 'passadis', 'estant', 'alcada']
 
 
-@admin.register(Treballador)
-class TreballadorAdmin(admin.ModelAdmin):
-    list_display  = ['nom', 'telefon', 'rol', 'magatzem']
-    list_filter   = ['superior', 'magatzem']
-    search_fields = ['nom', 'telefon']
-
-    def rol(self, obj):
-        return 'Superior' if obj.superior else 'Mosso'
-    rol.short_description = 'Rol'
-
-
 @admin.register(Producte)
 class ProducteAdmin(admin.ModelAdmin):
     list_display   = ['id_producte', 'nom', 'categoria', 'preu', 'estoc_total', 'codi_proveidor']
@@ -45,6 +30,6 @@ class ProducteAdmin(admin.ModelAdmin):
 @admin.register(Lot)
 class LotAdmin(admin.ModelAdmin):
     list_display  = ['id', 'producte', 'ubicacio', 'quantitat', 'superior', 'data_entrada']
-    list_filter   = ['superior', 'ubicacio__magatzem', 'data_entrada']
+    list_filter   = ['ubicacio__magatzem', 'data_entrada']
     search_fields = ['producte__id_producte', 'producte__nom']
     date_hierarchy = 'data_entrada'

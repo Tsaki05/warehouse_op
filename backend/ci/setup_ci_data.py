@@ -15,7 +15,7 @@ django.setup()
 
 from django.contrib.auth.models import User
 from apps.accounts.models import Perfil
-from apps.inventari.models import Magatzem, Ubicacio, Treballador, Producte, Lot
+from apps.inventari.models import Magatzem, Ubicacio, Producte, Lot
 from apps.clients.models import Client, Individual
 from apps.comandes.models import Comanda, Paquet, Factura
 
@@ -33,14 +33,18 @@ mosso.set_password('CiMosso1234!'); mosso.save()
 mag1, _ = Magatzem.objects.get_or_create(codi_magatzem='CI000001', defaults={'nom': 'Magatzem CI Alpha'})
 mag2, _ = Magatzem.objects.get_or_create(codi_magatzem='CI000002', defaults={'nom': 'Magatzem CI Beta'})
 
-# ── Perfils ────────────────────────────────────────────────────────────
-Perfil.objects.filter(user=admin).update(rol='admin',    magatzem=None)
-Perfil.objects.filter(user=supu).update( rol='superior', magatzem=mag1)
-Perfil.objects.filter(user=mosso).update(rol='mosso',    magatzem=mag1)
+# ── Superior per a mag2 (necessari per als lots de CI000002) ──────────
+supu2, _ = User.objects.get_or_create(username='ci_superior2')
+supu2.set_password('CiSup2_1234!'); supu2.save()
 
-# ── Treballadors superiors (necessaris per crear lots) ─────────────────
-sup1, _ = Treballador.objects.get_or_create(telefon='600000001', defaults={'nom': 'Sup Alpha', 'magatzem': mag1, 'superior': True})
-sup2, _ = Treballador.objects.get_or_create(telefon='600000002', defaults={'nom': 'Sup Beta',  'magatzem': mag2, 'superior': True})
+# ── Perfils ────────────────────────────────────────────────────────────
+Perfil.objects.filter(user=admin).update( rol='admin',    magatzem=None,  telefon='')
+Perfil.objects.filter(user=supu).update(  rol='superior', magatzem=mag1,  telefon='600000001')
+Perfil.objects.filter(user=mosso).update( rol='mosso',    magatzem=mag1,  telefon='')
+Perfil.objects.filter(user=supu2).update( rol='superior', magatzem=mag2,  telefon='600000002')
+
+sup1 = Perfil.objects.get(user=supu)
+sup2 = Perfil.objects.get(user=supu2)
 
 # ── Ubicacions ─────────────────────────────────────────────────────────
 u1, _ = Ubicacio.objects.get_or_create(magatzem=mag1, passadis='A01', estant='B01', alcada='C01')
@@ -137,9 +141,10 @@ Paquet.objects.get_or_create(comanda=c_imk, producte=p1,
                               defaults={'quantitat': 1, 'preu': Decimal('9.99')})
 
 print('Setup CI: OK ✓')
-print(f'  Admin:    ci_admin / CiAdmin1234!')
-print(f'  Superior: ci_superior / CiSup1234!   (magatzem: {mag1.codi_magatzem})')
-print(f'  Mosso:    ci_mosso / CiMosso1234!    (magatzem: {mag1.codi_magatzem})')
-print(f'  Client CI: {client_ci.nif} / {client_ci.nom}')
+print(f'  Admin:      ci_admin / CiAdmin1234!')
+print(f'  Superior1:  ci_superior / CiSup1234!    (magatzem: {mag1.codi_magatzem})')
+print(f'  Superior2:  ci_superior2 / CiSup2_1234! (magatzem: {mag2.codi_magatzem})')
+print(f'  Mosso:      ci_mosso / CiMosso1234!     (magatzem: {mag1.codi_magatzem})')
+print(f'  Client CI:  {client_ci.nif} / {client_ci.nom}')
 print(f'  Comandes CI: CIPND (pendent), CIPRP (preparada), CIFCT (facturada), CIIMK (test marcar)')
 print(f'  Lot p1/mag1: id={l_p1_m1.pk} quantitat=100 (resetejat)')

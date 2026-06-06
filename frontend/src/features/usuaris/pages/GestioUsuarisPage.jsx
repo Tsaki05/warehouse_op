@@ -10,7 +10,7 @@ const ROL_BADGE  = { admin: 'purple', superior: 'blue', mosso: 'green' };
 const ROL_OPTIONS_ADMIN    = ['admin', 'superior', 'mosso'];
 const ROL_OPTIONS_SUPERIOR = ['mosso'];
 
-const EMPTY_FORM = { username: '', first_name: '', last_name: '', password: '', rol: 'mosso', magatzem: '' };
+const EMPTY_FORM = { username: '', first_name: '', last_name: '', password: '', telefon: '', rol: 'mosso', magatzem: '' };
 
 export default function GestioUsuaris() {
   const { user: me }          = useAuth();
@@ -59,6 +59,7 @@ export default function GestioUsuaris() {
       first_name: u.first_name,
       last_name:  u.last_name,
       password:   '',
+      telefon:    u.telefon ?? '',
       rol:        u.rol,
       magatzem:   u.magatzem ?? '',
     });
@@ -88,6 +89,7 @@ export default function GestioUsuaris() {
         password:   form.password,
         first_name: form.first_name,
         last_name:  form.last_name,
+        telefon:    form.telefon,
         rol:        form.rol,
         magatzem:   form.magatzem || null,
       });
@@ -104,6 +106,7 @@ export default function GestioUsuaris() {
       username:   form.username,
       first_name: form.first_name,
       last_name:  form.last_name,
+      telefon:    form.telefon,
     };
     if (isAdmin) { payload.rol = form.rol; payload.magatzem = form.magatzem || null; }
     try {
@@ -164,6 +167,7 @@ export default function GestioUsuaris() {
             <tr>
               <th>Usuari</th>
               <th>Nom complet</th>
+              <th>Telèfon</th>
               <th>Rol</th>
               {isAdmin && <th>Magatzem</th>}
               <th>Accions</th>
@@ -171,13 +175,14 @@ export default function GestioUsuaris() {
           </thead>
           <tbody>
             {usuaris.length === 0 ? (
-              <tr><td colSpan={isAdmin ? 5 : 4} style={{ textAlign: 'center', color: '#aab4be' }}>
+              <tr><td colSpan={isAdmin ? 6 : 5} style={{ textAlign: 'center', color: '#aab4be' }}>
                 Cap usuari trobat.
               </td></tr>
             ) : usuaris.map(u => (
               <tr key={u.id}>
                 <td className="text-mono">{u.username}</td>
                 <td>{u.first_name} {u.last_name}</td>
+                <td className="text-mono">{u.telefon || <span className="text-muted">—</span>}</td>
                 <td>
                   <span className={`badge badge--${ROL_BADGE[u.rol] || 'gray'}`}>
                     {ROL_LABEL[u.rol] || u.rol}
@@ -219,6 +224,11 @@ export default function GestioUsuaris() {
                   onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))} />
               </Field>
             </div>
+            <Field label="Telèfon">
+              <input className="login-input" value={form.telefon}
+                onChange={e => setForm(f => ({ ...f, telefon: e.target.value }))}
+                placeholder="Opcional" maxLength={20} />
+            </Field>
             {modal === 'create' && (
               <Field label="Contrasenya (mínim 8 caràcters)" required>
                 <PasswordInput value={form.password}

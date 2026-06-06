@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../auth/context/AuthContext';
 import { useFilter } from '../../../shared/contexts/FilterContext';
-import { getMagatzems, getUbicacions, createUbicacio, deleteUbicacio, createMagatzem, createUbicacionsBulk } from '../api/inventariApi';
+import { getMagatzems, getUbicacions, createUbicacio, deleteUbicacio, createMagatzem, deleteMagatzem, createUbicacionsBulk } from '../api/inventariApi';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import MagatzemAutocomplete from '../components/MagatzemAutocomplete';
 
@@ -9,15 +9,30 @@ const EMPTY_FORM = { passadis: '', estant: '', alcada: '' };
 
 export default function MagatzemsUbicacions() {
   const { user } = useAuth();
-  const { magFiltrat } = useFilter();
+  const { magFiltrat, setMagFiltrat } = useFilter();
   const canEdit  = user?.rol === 'admin' || user?.rol === 'superior';
   const isAdmin  = user?.rol === 'admin';
 
-  const [modalMag, setModalMag]   = useState(false);
-  const [nomMag, setNomMag]       = useState('');
-  const [savingMag, setSavingMag] = useState(false);
-  const [errorMag, setErrorMag]   = useState('');
+  const [modalMag, setModalMag]     = useState(false);
+  const [nomMag, setNomMag]         = useState('');
+  const [savingMag, setSavingMag]   = useState(false);
+  const [errorMag, setErrorMag]     = useState('');
   const [createdMag, setCreatedMag] = useState(null);
+
+  const [modalDelMag, setModalDelMag] = useState(null); // objecte magatzem a eliminar
+  const [deletingMag, setDeletingMag] = useState(false);
+  const [errorDelMag, setErrorDelMag] = useState('');
+
+  async function handleDeleteMagatzem() {
+    setDeletingMag(true); setErrorDelMag('');
+    try {
+      await deleteMagatzem(modalDelMag.codi_magatzem);
+      setMagFiltrat(prev => prev.filter(m => m.codi_magatzem !== modalDelMag.codi_magatzem));
+      setModalDelMag(null);
+    } catch (err) {
+      setErrorDelMag(err.response?.data?.detail || "No s'ha pogut eliminar el magatzem.");
+    } finally { setDeletingMag(false); }
+  }
 
   function openModalMag() {
     setNomMag(''); setErrorMag(''); setCreatedMag(null); setModalMag(true);
@@ -59,13 +74,49 @@ export default function MagatzemsUbicacions() {
               <div className="section-card" style={{ marginBottom: 12 }}>
                 <div className="section-card-header">
                   <span className="section-card-title">🏢 {mag.nom || 'Magatzem'}</span>
-                  <span className="section-card-count text-mono">{mag.codi_magatzem}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span className="section-card-count text-mono">{mag.codi_magatzem}</span>
+                    {isAdmin && (
+                      <button
+                        className="btn-sm btn-sm--del"
+                        onClick={() => { setErrorDelMag(''); setModalDelMag(mag); }}
+                      >
+                        Eliminar magatzem
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
               <UbicacionsPanel magatzemId={mag.codi_magatzem} canEdit={canEdit} />
             </div>
           ))
       }
+
+      {modalDelMag && (
+        <Modal title="Eliminar magatzem" onClose={() => setModalDelMag(null)}>
+          <div className="modal-form">
+            <p>
+              Segur que vols eliminar el magatzem{' '}
+              <strong>{modalDelMag.nom || modalDelMag.codi_magatzem}</strong>
+              {' '}(<span className="text-mono">{modalDelMag.codi_magatzem}</span>)?
+            </p>
+            <p style={{ marginTop: 8, color: '#7f8c8d', fontSize: '0.9rem' }}>
+              S'eliminaran totes les seves ubicacions. No es podrà eliminar si hi ha lots de productes assignats.
+            </p>
+            {errorDelMag && (
+              <div className="login-error" style={{ marginTop: 12 }}>
+                <span>⚠️</span> {errorDelMag}
+              </div>
+            )}
+            <div className="modal-actions" style={{ marginTop: 16 }}>
+              <button className="btn-secondary" onClick={() => setModalDelMag(null)}>Cancel·lar</button>
+              <button className="btn-danger" onClick={handleDeleteMagatzem} disabled={deletingMag}>
+                {deletingMag ? 'Eliminant...' : 'Eliminar magatzem'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {modalMag && (
         <Modal title="Nou magatzem" onClose={() => setModalMag(false)}>

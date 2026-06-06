@@ -8,8 +8,10 @@ import random
 import string
 from decimal import Decimal
 from faker import Faker
+from django.contrib.auth.models import User
 
-from apps.inventari.models import Magatzem, Ubicacio, Treballador, Producte, Lot
+from apps.accounts.models import Perfil
+from apps.inventari.models import Magatzem, Ubicacio, Producte, Lot
 from apps.clients.models import Client, Empresa, Individual, ClientMagatzem
 from apps.comandes.models import Factura, Comanda, Paquet
 
@@ -77,24 +79,44 @@ def seed(
             )
             ubicacions.append(u)
 
-    print("Generant treballadors...")
+    print("Generant usuaris (superiors i mossos)...")
     superiors = []
+    used_usernames = set(User.objects.values_list('username', flat=True))
+
+    def username_unic(prefix):
+        while True:
+            u = f"{prefix}_{codi_alfanumeric(6).lower()}"
+            if u not in used_usernames:
+                used_usernames.add(u)
+                return u
+
     for _ in range(n_superiors):
-        t = Treballador.objects.create(
-            telefon=fake.phone_number()[:20],
-            nom=fake.name(),
-            superior=True,
-            magatzem=random.choice(magatzems),
+        mag = random.choice(magatzems)
+        u = User.objects.create_user(
+            username=username_unic('sup'),
+            password='Superior1234!',
+            first_name=fake.first_name(),
+            last_name=fake.last_name(),
         )
-        superiors.append(t)
+        perfil = u.perfil
+        perfil.rol = 'superior'
+        perfil.magatzem = mag
+        perfil.telefon = fake.phone_number()[:20]
+        perfil.save()
+        superiors.append(perfil)
 
     for _ in range(n_mossos):
-        Treballador.objects.create(
-            telefon=fake.phone_number()[:20],
-            nom=fake.name(),
-            magatzem=random.choice(magatzems),
-            superior=False,
+        u = User.objects.create_user(
+            username=username_unic('mosso'),
+            password='Mosso1234!',
+            first_name=fake.first_name(),
+            last_name=fake.last_name(),
         )
+        perfil = u.perfil
+        perfil.rol = 'mosso'
+        perfil.magatzem = random.choice(magatzems)
+        perfil.telefon = fake.phone_number()[:20]
+        perfil.save()
 
     print("Generant productes...")
     productes = []
@@ -235,12 +257,13 @@ def seed(
 
     print(f"""
 Dades generades correctament:
-  Magatzems:    {Magatzem.objects.count()}
-  Ubicacions:   {Ubicacio.objects.count()}
-  Treballadors: {Treballador.objects.count()}
-  Productes:    {Producte.objects.count()}
-  Lots:         {Lot.objects.count()}
-  Clients:      {Client.objects.count()}
-  Comandes:     {Comanda.objects.count()}
-  Factures:     {Factura.objects.count()}
+  Magatzems:  {Magatzem.objects.count()}
+  Ubicacions: {Ubicacio.objects.count()}
+  Superiors:  {Perfil.objects.filter(rol='superior').count()}
+  Mossos:     {Perfil.objects.filter(rol='mosso').count()}
+  Productes:  {Producte.objects.count()}
+  Lots:       {Lot.objects.count()}
+  Clients:    {Client.objects.count()}
+  Comandes:   {Comanda.objects.count()}
+  Factures:   {Factura.objects.count()}
     """)
