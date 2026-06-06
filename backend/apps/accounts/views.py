@@ -70,6 +70,7 @@ class UsuarisView(APIView):
         last_name   = data.get('last_name', '').strip()
         nou_rol     = data.get('rol', 'mosso')
         magatzem_id = data.get('magatzem') or None
+        telefon     = data.get('telefon', '')
 
         if not username or not password:
             return Response({'detail': 'Cal usuari i contrasenya.'},
@@ -87,7 +88,7 @@ class UsuarisView(APIView):
             magatzem_id = _caller_magatzem(request)
 
         user = AccountService.crear_usuari(username, password, first_name, last_name,
-                                           nou_rol, magatzem_id)
+                                           nou_rol, magatzem_id, telefon)
         return Response(AccountService.user_to_dict(user), status=status.HTTP_201_CREATED)
 
 

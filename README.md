@@ -25,7 +25,9 @@ warehouse_op/
 ├── backend/
 │   ├── apps/
 │   │   ├── accounts/           # Usuaris, perfils (admin/superior/mosso), permisos
-│   │   ├── inventari/          # Magatzems, ubicacions, treballadors, productes, lots
+│   │   ├── inventari/          # Magatzems, ubicacions, productes, lots
+│   │   │   ├── services.py     # Lògica de negoci atòmica (crear magatzem, bulk ubicacions…)
+│   │   │   └── views.py        # ViewSets amb permisos per rol
 │   │   ├── clients/            # Clients (empresa/individual), ClientMagatzem
 │   │   └── comandes/           # Comandes, paquets, factures
 │   ├── ci/
@@ -48,27 +50,41 @@ warehouse_op/
 │   └── manage.py
 ├── frontend/
 │   ├── src/
-│   │   ├── api/
-│   │   │   └── api.js          # Axios + paramsSerializer per a arrays + refresh JWT
-│   │   ├── components/
-│   │   │   ├── MagatzemAutocomplete.jsx  # Autocomplete single/multi magatzem
-│   │   │   └── PasswordInput.jsx
-│   │   ├── contexts/
-│   │   │   ├── AuthContext.jsx  # JWT, rol, user global
-│   │   │   └── FilterContext.jsx # Filtre global de magatzem (array, [] = tots)
-│   │   ├── hooks/
-│   │   │   └── useDebounce.js
-│   │   ├── pages/
-│   │   │   ├── Home.jsx              # Dashboard amb estadístiques
-│   │   │   ├── Login.jsx
-│   │   │   ├── Productes.jsx         # CRUD productes + lots
-│   │   │   ├── MagatzemsUbicacions.jsx # Gestió d'ubicacions per magatzem
-│   │   │   ├── PrepararComandes.jsx  # Llista i gestió de comandes
-│   │   │   ├── Facturacio.jsx        # Factures + clients amb stats lazy
-│   │   │   ├── EstocMagatzems.jsx    # Vista d'estoc per magatzem
-│   │   │   ├── UbicacioProductes.jsx # Productes per ubicació
-│   │   │   └── GestioUsuaris.jsx     # CRUD usuaris (admin)
-│   │   ├── App.jsx             # Router, layout, sidebar amb filtre de magatzem
+│   │   ├── app/
+│   │   │   ├── providers.jsx   # Composició de providers globals (Auth + Filter)
+│   │   │   └── router.jsx      # Layout, RequireAuth, AppRouter i sidebar
+│   │   ├── features/           # Mòduls per domini (barrel export via index.js)
+│   │   │   ├── auth/
+│   │   │   │   ├── api/authApi.js
+│   │   │   │   ├── context/AuthContext.jsx  # JWT, rol, user global
+│   │   │   │   └── pages/LoginPage.jsx
+│   │   │   ├── inventari/
+│   │   │   │   ├── api/inventariApi.js      # Magatzems, ubicacions, productes, lots
+│   │   │   │   ├── components/
+│   │   │   │   │   └── MagatzemAutocomplete.jsx  # Cerca async al backend (fetchOptions)
+│   │   │   │   └── pages/
+│   │   │   │       ├── MagatzemsUbicacionsPage.jsx  # Gestió d'ubicacions + creació massiva
+│   │   │   │       ├── ProductesPage.jsx
+│   │   │   │       ├── EstocMagatzemsPage.jsx
+│   │   │   │       └── UbicacioProductesPage.jsx
+│   │   │   ├── comandes/
+│   │   │   │   ├── api/comandesApi.js
+│   │   │   │   └── pages/
+│   │   │   │       ├── PrepararComandesPage.jsx
+│   │   │   │       └── FacturacioPage.jsx
+│   │   │   ├── clients/
+│   │   │   │   └── api/clientsApi.js
+│   │   │   ├── dashboard/
+│   │   │   │   └── pages/HomePage.jsx
+│   │   │   └── usuaris/
+│   │   │       ├── api/usuarisApi.js
+│   │   │       └── pages/GestioUsuarisPage.jsx
+│   │   ├── shared/             # Utilitats transversals
+│   │   │   ├── api/client.js   # Axios + paramsSerializer + refresh JWT automàtic
+│   │   │   ├── components/PasswordInput.jsx
+│   │   │   ├── contexts/FilterContext.jsx  # Filtre global de magatzem ([] = tots)
+│   │   │   └── hooks/useDebounce.js
+│   │   ├── App.jsx
 │   │   ├── App.css
 │   │   └── index.css
 │   ├── package.json
@@ -76,7 +92,7 @@ warehouse_op/
 ├── docs/
 │   └── setup.md                # Guia de configuració detallada
 ├── .env.example
-├── .env.local.example          # Variables del frontend (VITE_API_URL)
+├── .env.local.example          # Variables del frontend (VITE_API_URL, VITE_PORT)
 ├── docker-compose.yml
 └── Makefile
 ```
@@ -85,14 +101,16 @@ warehouse_op/
 
 ```
 Magatzem ──< Ubicacio ──< Lot >── Producte
-    │
-    └──< Treballador
+    │                      │
+    └──< Perfil            └── Perfil (superior, nullable)
     │
     └──< ClientMagatzem >── Client ──< Empresa
                                   └──< Individual
                                   └──< Comanda >── Paquet >── Producte
                                             └── Factura
 ```
+
+**`Perfil`** — centralitza la informació del treballador: rol (`admin`/`superior`/`mosso`), magatzem assignat i telèfon. Creat automàticament via `post_save` signal quan es crea un `User`.
 
 **`ClientMagatzem`** — taula intermèdia explícita entre Client i Magatzem:
 - `data_alta`: des de quan és client d'aquell magatzem
@@ -146,7 +164,9 @@ L'aplicació estarà disponible a `http://localhost:5173`.
 
 ### Credencials de prova (seed)
 
-Després del seed, pots crear un superusuari i un perfil:
+El seed genera automàticament usuaris amb Perfil (admin, superiors i mossos) per a cada magatzem. Consulta la sortida del seed per veure els usuaris creats.
+
+Per crear un administrador addicional manualment:
 
 ```bash
 python manage.py createsuperuser
@@ -154,7 +174,9 @@ python manage.py shell -c "
 from django.contrib.auth.models import User
 from apps.accounts.models import Perfil
 u = User.objects.get(username='el-teu-user')
-Perfil.objects.create(user=u, rol='admin')
+p = Perfil.objects.get(user=u)
+p.rol = 'admin'
+p.save()
 "
 ```
 
@@ -194,13 +216,17 @@ L'API és accessible a `http://localhost:8000/api/`. Tots els endpoints (excepte
 | POST | `/api/auth/refresh/` | Renova el token d'accés |
 
 ### Inventari
-| Mètode | URL | Paràmetres destacats |
-|---|---|---|
-| GET | `/api/inventari/magatzems/` | `magatzem_filter` (multi) |
-| GET/POST/DELETE | `/api/inventari/ubicacions/` | `magatzem`, `magatzem_filter`, `cerca` |
-| GET | `/api/inventari/treballadors/` | `magatzem_filter` |
-| GET/POST | `/api/inventari/productes/` | `magatzem_filter`, `cerca`, `categoria`, `baix_estoc`, `ordre` |
-| GET/POST/DELETE | `/api/inventari/lots/` | `producte`, `magatzem_filter` |
+| Mètode | URL | Paràmetres destacats | Rol mínim |
+|---|---|---|---|
+| GET | `/api/inventari/magatzems/` | `magatzem_filter` (multi), `cerca` | Autenticat |
+| POST | `/api/inventari/magatzems/` | `{nom}` — codi autogenerat (8 car.) | Admin |
+| DELETE | `/api/inventari/magatzems/{codi}/` | — retorna 409 si té lots associats | Admin |
+| GET | `/api/inventari/ubicacions/` | `magatzem`, `magatzem_filter`, `cerca` (màx. 200 resultats) | Autenticat |
+| POST | `/api/inventari/ubicacions/` | `{magatzem, passadis, estant, alcada}` (3 car. cadascun) | Admin/Superior |
+| DELETE | `/api/inventari/ubicacions/{id}/` | — retorna 409 si té lots associats | Admin/Superior |
+| POST | `/api/inventari/ubicacions/bulk/` | `{magatzem, passadis, combinacions: [{estant, alcada}]}` | Admin/Superior |
+| GET/POST | `/api/inventari/productes/` | `magatzem_filter`, `cerca`, `categoria`, `baix_estoc`, `ordre`, `page` | Autenticat/Admin |
+| GET/POST/DELETE | `/api/inventari/lots/` | `producte`, `magatzem_filter` | Autenticat/Admin |
 
 ### Clients
 | Mètode | URL | Paràmetres destacats |
@@ -227,7 +253,7 @@ Internament, Django els llegeix amb `request.query_params.getlist('magatzem_filt
 - **Índexs de BD**: `producte.estoc_total`, `producte.categoria`, `comanda.data`, `comanda.enviament`, `factura.data`
 - **`select_related` / `prefetch_related`** a tots els viewsets per evitar N+1
 - **Stats de clients lazy**: el llistat de clients no calcula `n_comandes`/`import_total`; s'obtenen al fer clic en un client concret (1 query per client en comptes de N×2 per pàgina)
-- **Paginació**: tots els endpoints paginats; ubicacions limitat a 200 resultats
+- **Paginació**: tots els endpoints paginats (50 elements per pàgina); ubicacions limitat a 200 resultats; productes suporten scroll infinit via `?page=N`
 
 ## Autors
 

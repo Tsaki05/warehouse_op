@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Magatzem, Ubicacio, Treballador, Producte, Lot
+from .models import Magatzem, Ubicacio, Producte, Lot
 
 
 class MagatzemSerializer(serializers.ModelSerializer):
@@ -19,16 +19,6 @@ class UbicacioSerializer(serializers.ModelSerializer):
         model  = Ubicacio
         fields = ['id_ubicacio', 'magatzem', 'magatzem_nom', 'passadis', 'estant', 'alcada']
 
-
-class TreballadorSerializer(serializers.ModelSerializer):
-    tipus = serializers.SerializerMethodField()
-
-    class Meta:
-        model  = Treballador
-        fields = ['telefon', 'nom', 'tipus', 'magatzem']
-
-    def get_tipus(self, obj):
-        return 'Superior' if obj.superior else 'Mosso'
 
 
 class LotBreu(serializers.ModelSerializer):
@@ -74,14 +64,22 @@ class ProducteSerializer(serializers.ModelSerializer):
 class LotSerializer(serializers.ModelSerializer):
     producte_nom  = serializers.CharField(source='producte.nom', read_only=True)
     ubicacio_codi = serializers.SerializerMethodField()
+    superior_nom  = serializers.SerializerMethodField()
 
     class Meta:
         model  = Lot
         fields = [
             'id', 'producte', 'producte_nom', 'ubicacio', 'ubicacio_codi',
-            'superior', 'quantitat', 'data_entrada',
+            'superior', 'superior_nom', 'quantitat', 'data_entrada',
         ]
+        extra_kwargs = {'superior': {'required': False, 'allow_null': True}}
 
     def get_ubicacio_codi(self, obj):
         u = obj.ubicacio
         return f"{u.passadis}-{u.estant}-{u.alcada}"
+
+    def get_superior_nom(self, obj):
+        if not obj.superior_id:
+            return None
+        u = obj.superior.user
+        return u.get_full_name() or u.username

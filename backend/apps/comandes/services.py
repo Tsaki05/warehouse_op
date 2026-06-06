@@ -297,3 +297,4 @@ def get_dashboard_data(mag_id):
         'ranking_treballadors': ranking_treballadors,
         'resum':                resum,
     }
+

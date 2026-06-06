@@ -35,6 +35,10 @@ export default function Productes() {
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState(null);
   const [expandit, setExpandit]     = useState(null);
+  const [hasMore, setHasMore]         = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const pageRef     = useRef(1);
+  const sentinelRef = useRef(null);
 
   const [cerca, setCerca]               = useState('');
   const [categories, setCategories]     = useState(new Set());
@@ -76,24 +80,41 @@ export default function Productes() {
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
-  const loadProductes = useCallback(() => {
-    setLoading(true);
+  const loadProductes = useCallback((pageNum = 1) => {
+    if (pageNum === 1) setLoading(true);
+    else setLoadingMore(true);
     getProductes({
       cerca: cercaDb || undefined,
       categoria: categories.size > 0 ? [...categories] : undefined,
       ordre,
       baix_estoc: baixEstocFiltrat ? 'true' : undefined,
+      page: pageNum > 1 ? pageNum : undefined,
       ...magFilter,
     })
       .then(res => {
-        setProductes(res.data.results ?? res.data);
-        setTotal(res.data.count ?? (res.data.results ?? res.data).length);
+        const results = res.data.results ?? res.data;
+        if (pageNum === 1) setProductes(results);
+        else setProductes(prev => [...prev, ...results]);
+        setTotal(res.data.count ?? results.length);
+        setHasMore(!!res.data.next);
+        pageRef.current = pageNum;
       })
       .catch(() => setError("No s'ha pogut carregar els productes."))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setLoadingMore(false); });
   }, [cercaDb, categories, ordre, baixEstocFiltrat, magFiltrat]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadProductes(); }, [loadProductes]);
+  useEffect(() => { pageRef.current = 1; loadProductes(1); }, [loadProductes]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !hasMore || loadingMore || loading) return;
+    const observer = new IntersectionObserver(
+      entries => { if (entries[0].isIntersecting) loadProductes(pageRef.current + 1); },
+      { threshold: 0 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadProductes, loadingMore, loading]);
 
   useEffect(() => {
     getProductes({ baix_estoc: 'true', ordre: 'estoc_asc', ...magFilter })
@@ -354,6 +375,11 @@ export default function Productes() {
             </tbody>
           </table>
         </div>
+      )}
+
+      <div ref={sentinelRef} style={{ height: 1 }} />
+      {loadingMore && (
+        <div className="state-box" style={{ padding: '12px 0' }}>Carregant més productes...</div>
       )}
 
       {/* ── Modal nou producte ── */}

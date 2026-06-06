@@ -1,6 +1,7 @@
 from django.db import models
 from django.core.validators import RegexValidator
 
+
 class Magatzem(models.Model):
     codi_magatzem = models.CharField(
         validators=[
@@ -89,27 +90,6 @@ class Ubicacio(models.Model):
         return f"{self.magatzem_id} — {self.passadis}/{self.estant}/{self.alcada}"
 
 
-class Treballador(models.Model):
-    telefon   = models.CharField(max_length=20, primary_key=True)
-    nom       = models.CharField(max_length=100)
-    superior  = models.BooleanField(default=False)
-    magatzem  = models.ForeignKey(
-        'Magatzem',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='treballadors'
-    )
-
-    class Meta:
-        db_table = 'treballador'
-        verbose_name = 'Treballador'
-        verbose_name_plural = 'Treballadors'
-
-    def __str__(self):
-        carrec = 'Superior' if self.superior else 'Mosso'
-        return f"{self.nom} ({carrec}) - {self.telefon}"
-
 
 class Producte(models.Model):
     class Mida(models.TextChoices):
@@ -181,7 +161,12 @@ class Producte(models.Model):
 class Lot(models.Model):
     ubicacio     = models.ForeignKey(Ubicacio, on_delete=models.RESTRICT, related_name='lots')
     producte     = models.ForeignKey(Producte, on_delete=models.RESTRICT, related_name='lots')
-    superior     = models.ForeignKey(Treballador, on_delete=models.RESTRICT, related_name='lots')
+    superior     = models.ForeignKey(
+        'accounts.Perfil',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='lots',
+    )
     data_entrada = models.DateField(auto_now_add=True)
     quantitat    = models.IntegerField(
         validators=[

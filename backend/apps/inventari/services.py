@@ -1,7 +1,7 @@
 import re
 import uuid
 from django.db import transaction
-from .models import Magatzem, Treballador, Ubicacio, Lot, Producte
+from .models import Magatzem, Ubicacio, Lot, Producte
 
 _COD3 = re.compile(r'^[A-Za-z0-9]{3}$')
 
@@ -15,8 +15,9 @@ def crear_magatzem(nom):
 
 
 def get_superior_for_mag(magatzem):
-    """Retorna el primer treballador superior del magatzem, o None."""
-    return Treballador.objects.filter(magatzem=magatzem, superior=True).first()
+    """Retorna el Perfil del primer superior del magatzem, o None."""
+    from apps.accounts.models import Perfil
+    return Perfil.objects.filter(magatzem=magatzem, rol='superior').first()
 
 
 @transaction.atomic
