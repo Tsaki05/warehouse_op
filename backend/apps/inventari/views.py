@@ -165,13 +165,15 @@ class ProducteViewSet(viewsets.ModelViewSet):
 
         if p.get('baix_estoc') == 'true':
             lot_filter = Q(ubicacio__magatzem_id__in=mag_ids) if mag_ids else Q()
+            # Agrupa per (producte, magatzem) i marca crític si ALGUN magatzem té < ESTOC_BAIX
             ids_baix = (
                 Lot.objects
                 .filter(lot_filter)
-                .values('producte_id')
+                .values('producte_id', 'ubicacio__magatzem_id')
                 .annotate(total=Sum('quantitat'))
                 .filter(total__lt=ESTOC_BAIX)
                 .values_list('producte_id', flat=True)
+                .distinct()
             )
             qs = qs.filter(id_producte__in=ids_baix)
 
@@ -179,11 +181,13 @@ class ProducteViewSet(viewsets.ModelViewSet):
 
         if ordre_param in ('estoc_asc', 'estoc_desc'):
             lot_filter = Q(ubicacio__magatzem_id__in=mag_ids) if mag_ids else Q()
+            # Pren el mínim d'estoc per magatzem (el més crític) per ordenar
             estoc_sub = Subquery(
                 Lot.objects
                 .filter(lot_filter, producte_id=OuterRef('pk'))
-                .values('producte_id')
+                .values('producte_id', 'ubicacio__magatzem_id')
                 .annotate(total=Sum('quantitat'))
+                .order_by('total')
                 .values('total')[:1],
                 output_field=IntegerField()
             )

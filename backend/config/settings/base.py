@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     'apps.clients',
     'apps.comandes',
     'apps.accounts',
+    'axes',
 ]
 
 MIDDLEWARE = [
@@ -27,6 +28,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'axes.middleware.AxesMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -43,6 +45,9 @@ CORS_ALLOWED_ORIGINS = [
     "http://10.190.149.92:5173",
     "http://10.190.149.92:5174",
     "http://10.190.149.92:5175",
+    "http://192.168.1.37:5173",
+    "http://10.143.82.92:5173",
+    "http://10.143.82.92:5173"
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -79,6 +84,12 @@ DATABASES = {
     }
 }
 
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+    }
+}
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -90,7 +101,19 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 50,
 }
 
+AUTHENTICATION_BACKENDS = [
+    'axes.backends.AxesStandaloneBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
 from datetime import timedelta
+AXES_FAILURE_LIMIT      = 5
+AXES_COOLOFF_TIME       = timedelta(minutes=1)
+AXES_RESET_ON_SUCCESS   = True
+AXES_LOCKOUT_PARAMETERS = ['ip_address']
+AXES_ENABLED            = True
+AXES_LOCKOUT_CALLABLE   = 'apps.accounts.lockout.json_lockout'
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME':  timedelta(hours=8),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),

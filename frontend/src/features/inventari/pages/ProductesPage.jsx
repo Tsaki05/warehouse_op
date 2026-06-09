@@ -37,8 +37,9 @@ export default function Productes() {
   const [expandit, setExpandit]     = useState(null);
   const [hasMore, setHasMore]         = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const pageRef     = useRef(1);
-  const sentinelRef = useRef(null);
+  const pageRef        = useRef(1);
+  const sentinelRef    = useRef(null);
+  const fetchingRef    = useRef(false);
 
   const [cerca, setCerca]               = useState('');
   const [categories, setCategories]     = useState(new Set());
@@ -81,8 +82,9 @@ export default function Productes() {
 
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadProductes = useCallback((pageNum = 1) => {
-    if (pageNum === 1) setLoading(true);
+    if (pageNum === 1) { setLoading(true); setHasMore(false); }
     else setLoadingMore(true);
+    fetchingRef.current = true;
     getProductes({
       cerca: cercaDb || undefined,
       categoria: categories.size > 0 ? [...categories] : undefined,
@@ -99,15 +101,15 @@ export default function Productes() {
         setHasMore(!!res.data.next);
         pageRef.current = pageNum;
       })
-      .catch(() => setError("No s'ha pogut carregar els productes."))
-      .finally(() => { setLoading(false); setLoadingMore(false); });
+      .catch(() => { setError("No s'ha pogut carregar els productes."); setHasMore(false); })
+      .finally(() => { setLoading(false); setLoadingMore(false); fetchingRef.current = false; });
   }, [cercaDb, categories, ordre, baixEstocFiltrat, magFiltrat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { pageRef.current = 1; loadProductes(1); }, [loadProductes]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
-    if (!sentinel || !hasMore || loadingMore || loading) return;
+    if (!sentinel || !hasMore || loadingMore || loading || fetchingRef.current) return;
     const observer = new IntersectionObserver(
       entries => { if (entries[0].isIntersecting) loadProductes(pageRef.current + 1); },
       { threshold: 0 }

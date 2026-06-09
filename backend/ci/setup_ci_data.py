@@ -105,7 +105,7 @@ factura_ci, _ = Factura.objects.get_or_create(
 c_pnd, _ = Comanda.objects.get_or_create(
     id_comanda='CIPND',
     defaults={'client': client_ci, 'import_total': Decimal('9.99'),
-              'preparat': False, 'enviament': False},
+              'preparat': False, 'enviament': False, 'magatzem': mag1},
 )
 Paquet.objects.get_or_create(comanda=c_pnd, producte=p1,
                               defaults={'quantitat': 1, 'preu': Decimal('9.99')})
@@ -113,7 +113,7 @@ Paquet.objects.get_or_create(comanda=c_pnd, producte=p1,
 c_prp, _ = Comanda.objects.get_or_create(
     id_comanda='CIPRP',
     defaults={'client': client_ci, 'import_total': Decimal('49.99'),
-              'preparat': True, 'enviament': True},
+              'preparat': True, 'enviament': True, 'magatzem': mag1},
 )
 Paquet.objects.get_or_create(comanda=c_prp, producte=p2,
                               defaults={'quantitat': 1, 'preu': Decimal('49.99')})
@@ -121,12 +121,18 @@ Paquet.objects.get_or_create(comanda=c_prp, producte=p2,
 c_fct, _ = Comanda.objects.get_or_create(
     id_comanda='CIFCT',
     defaults={'client': client_ci, 'import_total': Decimal('9.99'),
-              'preparat': True, 'factura': factura_ci, 'enviament': False},
+              'preparat': True, 'factura': factura_ci, 'enviament': False, 'magatzem': mag1},
 )
-# Assegurem que CIFCT sempre té la factura (per si s'ha desassociat)
+# Assegurem que CIFCT sempre té la factura i el magatzem correcte
+needs_save = []
 if c_fct.factura_id != factura_ci.pk:
     c_fct.factura = factura_ci
-    c_fct.save(update_fields=['factura'])
+    needs_save.append('factura')
+if c_fct.magatzem_id != mag1.pk:
+    c_fct.magatzem = mag1
+    needs_save.append('magatzem')
+if needs_save:
+    c_fct.save(update_fields=needs_save)
 Paquet.objects.get_or_create(comanda=c_fct, producte=p1,
                               defaults={'quantitat': 1, 'preu': Decimal('9.99')})
 
@@ -134,9 +140,9 @@ Paquet.objects.get_or_create(comanda=c_fct, producte=p1,
 c_imk, _ = Comanda.objects.get_or_create(
     id_comanda='CIIMK',
     defaults={'client': client_ci, 'import_total': Decimal('9.99'),
-              'preparat': False, 'factura': None, 'enviament': False},
+              'preparat': False, 'factura': None, 'enviament': False, 'magatzem': mag1},
 )
-Comanda.objects.filter(pk='CIIMK').update(preparat=False, factura=None)
+Comanda.objects.filter(pk='CIIMK').update(preparat=False, factura=None, magatzem=mag1)
 Paquet.objects.get_or_create(comanda=c_imk, producte=p1,
                               defaults={'quantitat': 1, 'preu': Decimal('9.99')})
 

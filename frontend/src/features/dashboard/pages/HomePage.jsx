@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/context/AuthContext';
 import { useFilter } from '../../../shared/contexts/FilterContext';
 import { getComandes, getDashboard } from '../../comandes/api/comandesApi';
-import { getMagatzems, getProductes } from '../../inventari/api/inventariApi';
+import { getProductes } from '../../inventari/api/inventariApi';
 
 export default function Home() {
   const { user }       = useAuth();
@@ -35,55 +35,65 @@ export default function Home() {
    DASHBOARD ADMIN / SUPERIOR
 ════════════════════════════════════════ */
 function DashboardAdmin({ magFiltrat }) {
-  const [ops, setOps]         = useState(null);
-  const [stats, setStats]     = useState(null);
+  const [data, setData]     = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError]   = useState(false);
 
   useEffect(() => {
+    setLoading(true);
+    setData(null);
+    setError(false);
+
     const magIds    = magFiltrat.map(m => m.codi_magatzem);
     const magFilter = magIds.length > 0 ? { magatzem_filter: magIds } : {};
-    setLoading(true);
 
     Promise.all([
+      getDashboard(magIds.length > 0 ? { magatzem_filter: magIds } : {}),
       getComandes({ sense_factura: 'true', ...magFilter }),
       getProductes({ baix_estoc: 'true', ordre: 'estoc_asc', ...magFilter }),
-      getMagatzems(magIds.length > 0 ? { magatzem_filter: magIds } : undefined),
-      getDashboard(magIds.length > 0 ? { magatzem_filter: magIds } : {}),
-    ]).then(([comandes, baixEstoc, magatzems, dashboard]) => {
-      const pendents    = comandes.data.results ?? [];
-      const totalPend   = comandes.data.count ?? 0;
-      const enviaments  = pendents.filter(c => c.enviament);
-      setOps({ totalPend, enviaments, comandes: pendents.slice(0, 6), baixEstoc: baixEstoc.data.results ?? [] });
-      setStats({ ...dashboard.data, totalMags: (magatzems.data.results ?? magatzems.data).length });
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    ])
+      .then(([dashboard, comandes, baixEstoc]) => {
+        const pendents = comandes.data.results ?? [];
+        setData({
+          stats:    dashboard.data,
+          totalPend: comandes.data.count ?? 0,
+          comandes:  pendents.slice(0, 6),
+          baixEstoc: baixEstoc.data.results ?? [],
+        });
+        setLoading(false);
+      })
+      .catch(() => { setError(true); setLoading(false); });
   }, [magFiltrat]);
 
-  if (loading) return <div className="state-box">Carregant estadístiques...</div>;
-  if (!ops || !stats) return <div className="state-box state-box--error">Error carregant el dashboard.</div>;
+  if (loading) return <LoadingScreen />;
+  if (error || !data) return <div className="state-box state-box--error">Error carregant el dashboard.</div>;
 
+  const { stats, totalPend, comandes, baixEstoc } = data;
   const { resum, facturacio_mes, top_clients, ranking_treballadors } = stats;
 
   return (
     <>
       {/* ── Stat cards ── */}
       <div className="stat-grid">
-        <StatCard label="Comandes pendents" value={ops.totalPend.toLocaleString()}
+        <StatCard label="Comandes pendents" value={totalPend.toLocaleString()}
           sub="sense factura assignada" variant="blue" to="/comandes" />
         <StatCard label="Comandes (30 dies)" value={resum.n_comandes_mes.toLocaleString()}
           sub="comandes registrades" variant="green" to="/comandes" />
-        <StatCard label="Facturat (últim any)" value={`${resum.facturacio_total_any.toLocaleString('ca', { maximumFractionDigits: 0 })} €`}
+        <StatCard label="Facturat (últim any)"
+          value={`${resum.facturacio_total_any.toLocaleString('ca', { maximumFractionDigits: 0 })} €`}
           sub={`${resum.n_factures_any} factures`} variant="purple" to="/factures" />
-        <StatCard label="Estoc crític" value={ops.baixEstoc.length}
+        <StatCard label="Estoc crític" value={baixEstoc.length}
           sub="productes < 25 unitats" variant="orange" to="/productes?baix_estoc=true" />
       </div>
 
-      {/* ── Gràfica facturació + Ranking treballadors ── */}
+      {/* ── Gràfica + Rànking ── */}
       <div className="dashboard-grid">
         <div className="section-card">
           <div className="section-card-header">
             <span className="section-card-title">🧾 Facturació (últims 30 dies)</span>
-            <span className="section-card-count">{resum.facturacio_total_mes.toLocaleString('ca', { maximumFractionDigits: 0 })} €</span>
+            <span className="section-card-count">
+              {resum.facturacio_total_mes.toLocaleString('ca', { maximumFractionDigits: 0 })} €
+            </span>
           </div>
           <div style={{ padding: '8px 20px 16px' }}>
             <MiniBarChart data={facturacio_mes} valueKey="import" color="#9b59b6" />
@@ -99,23 +109,20 @@ function DashboardAdmin({ magFiltrat }) {
           </div>
           <div className="section-card-body">
             {ranking_treballadors.length === 0
-              ? <div style={{ padding: '24px', textAlign: 'center', color: '#aab4be' }}>Sense comandes preparades</div>
+              ? <EmptyBox>Sense comandes preparades</EmptyBox>
               : ranking_treballadors.map((t, i) => (
                 <div key={t.id} className="list-row">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{
-                      width: 24, height: 24, borderRadius: '50%',
-                      background: ['#f1c40f', '#bdc3c7', '#cd7f32', '#ecf0f1', '#ecf0f1'][i] ?? '#ecf0f1',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '0.72rem', fontWeight: 700, color: '#2c3e50', flexShrink: 0,
-                    }}>{i + 1}</span>
+                    <MedalBadge pos={i} />
                     <div>
                       <div className="list-row-main">{t.nom}</div>
                       <div className="list-row-sub">{t.n_comandes} comandes preparades</div>
                     </div>
                   </div>
                   <div className="list-row-right">
-                    <div className="list-row-amount">{t.import_total.toLocaleString('ca', { maximumFractionDigits: 2 })} €</div>
+                    <div className="list-row-amount">
+                      {t.import_total.toLocaleString('ca', { maximumFractionDigits: 2 })} €
+                    </div>
                   </div>
                 </div>
               ))
@@ -124,34 +131,32 @@ function DashboardAdmin({ magFiltrat }) {
         </div>
       </div>
 
-      {/* ── Top clients + Operacions ── */}
+      {/* ── Top clients + Comandes pendents ── */}
       <div className="dashboard-grid">
         <div className="section-card">
           <div className="section-card-header">
             <span className="section-card-title">🏆 Top clients (30 dies)</span>
             <span className="section-card-count">
-              {top_clients.reduce((s, c) => s + c.import_total, 0).toLocaleString('ca', { maximumFractionDigits: 0 })} €
+              {top_clients.reduce((s, c) => s + c.import_total, 0)
+                .toLocaleString('ca', { maximumFractionDigits: 0 })} €
             </span>
           </div>
           <div className="section-card-body">
             {top_clients.length === 0
-              ? <div style={{ padding: '24px', textAlign: 'center', color: '#aab4be' }}>Sense dades</div>
+              ? <EmptyBox>Sense dades</EmptyBox>
               : top_clients.map((c, i) => (
                 <div key={c.nif} className="list-row">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{
-                      width: 24, height: 24, borderRadius: '50%',
-                      background: ['#f1c40f', '#bdc3c7', '#cd7f32', '#ecf0f1', '#ecf0f1'][i],
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '0.72rem', fontWeight: 700, color: '#2c3e50', flexShrink: 0,
-                    }}>{i + 1}</span>
+                    <MedalBadge pos={i} />
                     <div>
                       <div className="list-row-main">{c.nom}</div>
                       <div className="list-row-sub text-mono">{c.nif} · {c.n_comandes} comandes</div>
                     </div>
                   </div>
                   <div className="list-row-right">
-                    <div className="list-row-amount">{c.import_total.toLocaleString('ca', { maximumFractionDigits: 2 })} €</div>
+                    <div className="list-row-amount">
+                      {c.import_total.toLocaleString('ca', { maximumFractionDigits: 2 })} €
+                    </div>
                   </div>
                 </div>
               ))
@@ -167,9 +172,9 @@ function DashboardAdmin({ magFiltrat }) {
             </Link>
           </div>
           <div className="section-card-body">
-            {ops.comandes.length === 0
-              ? <div style={{ padding: '24px', textAlign: 'center', color: '#aab4be' }}>Sense comandes pendents</div>
-              : ops.comandes.map(c => (
+            {comandes.length === 0
+              ? <EmptyBox>Sense comandes pendents</EmptyBox>
+              : comandes.map(c => (
                 <div key={c.id_comanda} className="list-row">
                   <div>
                     <div className="list-row-main text-mono">{c.id_comanda}</div>
@@ -187,45 +192,54 @@ function DashboardAdmin({ magFiltrat }) {
           </div>
         </div>
       </div>
-
     </>
   );
 }
 
 /* ════════════════════════════════════════
-   DASHBOARD MOSSO (operacional)
+   DASHBOARD MOSSO
 ════════════════════════════════════════ */
 function DashboardMosso({ magFiltrat }) {
-  const [stats, setStats]     = useState(null);
+  const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(false);
 
   useEffect(() => {
+    setLoading(true);
+    setData(null);
+    setError(false);
+
     const magIds    = magFiltrat.map(m => m.codi_magatzem);
     const magFilter = magIds.length > 0 ? { magatzem_filter: magIds } : {};
-    setLoading(true);
+
     Promise.all([
       getComandes({ sense_factura: 'true', ...magFilter }),
       getProductes({ baix_estoc: 'true', ...magFilter }),
-    ]).then(([comandes, baixEstoc]) => {
-      const pendents   = comandes.data.results ?? [];
-      const totalPend  = comandes.data.count ?? 0;
-      const enviaments = pendents.filter(c => c.enviament);
-      setStats({ totalPend, enviaments: enviaments.slice(0, 6), comandes: pendents.slice(0, 8), baixEstoc: baixEstoc.data.results ?? [] });
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    ])
+      .then(([comandes, baixEstoc]) => {
+        const pendents = comandes.data.results ?? [];
+        setData({
+          totalPend:  comandes.data.count ?? 0,
+          comandes:   pendents.slice(0, 8),
+          enviaments: pendents.filter(c => c.enviament).slice(0, 6),
+          baixEstoc:  baixEstoc.data.results ?? [],
+        });
+        setLoading(false);
+      })
+      .catch(() => { setError(true); setLoading(false); });
   }, [magFiltrat]);
 
-  if (loading) return <div className="state-box">Carregant...</div>;
-  if (!stats) return null;
+  if (loading) return <LoadingScreen />;
+  if (error || !data) return null;
 
   return (
     <>
       <div className="stat-grid">
-        <StatCard label="Comandes pendents" value={stats.totalPend.toLocaleString()}
+        <StatCard label="Comandes pendents" value={data.totalPend.toLocaleString()}
           sub="sense factura assignada" variant="blue" to="/comandes" />
-        <StatCard label="Enviaments pendents" value={stats.enviaments.length}
+        <StatCard label="Enviaments pendents" value={data.enviaments.length}
           sub="de la primera pàgina" variant="orange" to="/comandes" />
-        <StatCard label="Estoc crític" value={stats.baixEstoc.length}
+        <StatCard label="Estoc crític" value={data.baixEstoc.length}
           sub="productes < 25 unitats" variant="red" to="/productes?baix_estoc=true" />
       </div>
 
@@ -238,9 +252,9 @@ function DashboardMosso({ magFiltrat }) {
             </Link>
           </div>
           <div className="section-card-body">
-            {stats.comandes.length === 0
-              ? <div style={{ padding: '24px', textAlign: 'center', color: '#aab4be' }}>Sense comandes pendents</div>
-              : stats.comandes.map(c => (
+            {data.comandes.length === 0
+              ? <EmptyBox>Sense comandes pendents</EmptyBox>
+              : data.comandes.map(c => (
                 <div key={c.id_comanda} className="list-row">
                   <div>
                     <div className="list-row-main text-mono">{c.id_comanda}</div>
@@ -259,12 +273,12 @@ function DashboardMosso({ magFiltrat }) {
         <div className="section-card">
           <div className="section-card-header">
             <span className="section-card-title">🚚 Enviaments pendents</span>
-            <span className="section-card-count">{stats.enviaments.length}</span>
+            <span className="section-card-count">{data.enviaments.length}</span>
           </div>
           <div className="section-card-body">
-            {stats.enviaments.length === 0
-              ? <div style={{ padding: '24px', textAlign: 'center', color: '#aab4be' }}>Sense enviaments pendents</div>
-              : stats.enviaments.map(c => (
+            {data.enviaments.length === 0
+              ? <EmptyBox>Sense enviaments pendents</EmptyBox>
+              : data.enviaments.map(c => (
                 <div key={c.id_comanda} className="list-row">
                   <div>
                     <div className="list-row-main text-mono">{c.id_comanda}</div>
@@ -285,8 +299,34 @@ function DashboardMosso({ magFiltrat }) {
 }
 
 /* ════════════════════════════════════════
+   LOADING SCREEN
+════════════════════════════════════════ */
+function LoadingScreen() {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      minHeight: 320, gap: 16, color: '#aab4be',
+    }}>
+      <div style={{
+        width: 40, height: 40, borderRadius: '50%',
+        border: '3px solid #e8ecf0',
+        borderTopColor: '#3498db',
+        animation: 'spin 0.8s linear infinite',
+      }} />
+      <span style={{ fontSize: '0.9rem' }}>Carregant dades...</span>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
    COMPONENTS REUTILITZABLES
 ════════════════════════════════════════ */
+function EmptyBox({ children }) {
+  return <div style={{ padding: '24px', textAlign: 'center', color: '#aab4be' }}>{children}</div>;
+}
+
 function MiniBarChart({ data, valueKey, color = '#3498db' }) {
   const max = Math.max(...data.map(d => d[valueKey]), 1);
   const HEIGHT = 80;
@@ -297,7 +337,8 @@ function MiniBarChart({ data, valueKey, color = '#3498db' }) {
         {data.map((d, i) => {
           const h = Math.max((d[valueKey] / max) * HEIGHT, d[valueKey] > 0 ? 3 : 0);
           return (
-            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}
+            <div key={i}
+              style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}
               title={`${d.dia}: ${d[valueKey].toLocaleString('ca', { maximumFractionDigits: 0 })} €`}>
               <div style={{
                 background: d[valueKey] > 0 ? color : '#f0f2f5',
@@ -309,7 +350,6 @@ function MiniBarChart({ data, valueKey, color = '#3498db' }) {
           );
         })}
       </div>
-      {/* Eix X: 4 etiquetes de data */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
         {[0, 10, 20, 29].map(i => (
           <span key={i} style={{ fontSize: '0.68rem', color: '#aab4be' }}>
@@ -318,6 +358,18 @@ function MiniBarChart({ data, valueKey, color = '#3498db' }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function MedalBadge({ pos }) {
+  const colors = ['#f1c40f', '#bdc3c7', '#cd7f32', '#ecf0f1', '#ecf0f1'];
+  return (
+    <span style={{
+      width: 24, height: 24, borderRadius: '50%',
+      background: colors[pos] ?? '#ecf0f1',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: '0.72rem', fontWeight: 700, color: '#2c3e50', flexShrink: 0,
+    }}>{pos + 1}</span>
   );
 }
 
