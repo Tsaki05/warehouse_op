@@ -48,24 +48,43 @@ class ComandaViewSet(
         return ComandaSerializer
 
     def create(self, request, *args, **kwargs):
-        serializer = ComandaCreateSerializer(data=request.data)
+        from apps.inventari.models import Magatzem as Mag
+
+        perfil   = getattr(request.user, 'perfil', None)
+        is_admin = perfil and perfil.rol == 'admin'
+
+        # Determina el magatzem forçat ABANS de validar perquè el serialitzador
+        # el pugui usar per validar retorns (quantitats netes del client)
+        mag_override = None
+        if not is_admin and perfil and perfil.magatzem_id:
+            mag_override = Mag.objects.filter(pk=perfil.magatzem_id).first()
+
+        serializer = ComandaCreateSerializer(
+            data=request.data,
+            context={**self.get_serializer_context(), 'mag_override': mag_override},
+        )
         serializer.is_valid(raise_exception=True)
+
+        if mag_override:
+            # Superior/mosso: sobreescriu sempre amb el seu propi magatzem
+            serializer.validated_data['magatzem'] = mag_override
+        elif not serializer.validated_data.get('magatzem') and perfil and perfil.magatzem_id:
+            # Admin sense magatzem al payload: usa el de perfil si en té
+            serializer.validated_data['magatzem'] = Mag.objects.filter(
+                pk=perfil.magatzem_id
+            ).first()
+
         comanda = ComandaService.crear_comanda(serializer.validated_data)
 
-        mag_id = request.data.get('magatzem')
-        if not mag_id:
-            perfil = getattr(request.user, 'perfil', None)
-            if perfil and perfil.magatzem_id:
-                mag_id = perfil.magatzem_id
-        if mag_id:
+        if comanda.magatzem_id:
             ClientMagatzem.objects.get_or_create(
                 client_id=comanda.client_id,
-                magatzem_id=mag_id,
+                magatzem_id=comanda.magatzem_id,
             )
 
         comanda = (
             Comanda.objects
-            .select_related('client')
+            .select_related('client', 'magatzem')
             .prefetch_related(Prefetch('paquets', queryset=Paquet.objects.select_related('producte')))
             .get(pk=comanda.pk)
         )
@@ -89,7 +108,7 @@ class ComandaViewSet(
 
         return Response(ComandaSerializer(
             Comanda.objects
-            .select_related('client', 'factura', 'preparat_per')
+            .select_related('client', 'factura', 'preparat_per', 'magatzem')
             .prefetch_related(Prefetch('paquets', queryset=Paquet.objects.select_related('producte')))
             .get(pk=comanda.pk)
         ).data)
@@ -103,7 +122,7 @@ class ComandaViewSet(
 
         qs = (
             Comanda.objects
-            .select_related('client', 'factura', 'preparat_per')
+            .select_related('client', 'factura', 'preparat_per', 'magatzem')
             .prefetch_related(
                 Prefetch('paquets', queryset=Paquet.objects.select_related('producte'))
             )
@@ -111,9 +130,7 @@ class ComandaViewSet(
 
         mag_id = get_mag_ids(self.request)
         if mag_id:
-            qs = qs.filter(
-                paquets__producte__lots__ubicacio__magatzem_id__in=mag_id
-            ).distinct()
+            qs = qs.filter(magatzem_id__in=mag_id)
 
         if p.get('sense_factura') == 'true':
             qs = qs.filter(factura__isnull=True)
@@ -192,9 +209,7 @@ class FacturaViewSet(viewsets.ModelViewSet):
 
         mag_id = get_mag_ids(self.request)
         if mag_id:
-            qs = qs.filter(
-                comandes__paquets__producte__lots__ubicacio__magatzem_id__in=mag_id
-            ).distinct()
+            qs = qs.filter(comandes__magatzem_id__in=mag_id).distinct()
 
         cerca = p.get('cerca', '').strip()
         if cerca:

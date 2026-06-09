@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/context/AuthContext';
 import { useFilter } from '../../../shared/contexts/FilterContext';
 import { getComandes, createComanda, marcarPreparat, createFactura } from '../api/comandesApi';
-import { getProductes, getLots } from '../../inventari/api/inventariApi';
+import { getProductes, getLots, getMagatzems } from '../../inventari/api/inventariApi';
 import { getClients, createClient } from '../../clients/api/clientsApi';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 
@@ -37,8 +37,9 @@ export default function PrepararComandes() {
   const { user }       = useAuth();
   const { magFiltrat } = useFilter();
   const navigate       = useNavigate();
-  const canCreate      = user?.rol === 'admin' || user?.rol === 'superior';
-  const canInvoice     = user?.rol === 'admin' || user?.rol === 'superior';
+  const isAdmin        = user?.rol === 'admin';
+  const canCreate      = isAdmin || user?.rol === 'superior';
+  const canInvoice     = isAdmin || user?.rol === 'superior';
 
   const [comandes, setComandes]   = useState([]);
   const [total, setTotal]         = useState(0);
@@ -66,11 +67,18 @@ export default function PrepararComandes() {
   const [factError, setFactError]         = useState('');
 
   // form nova comanda
-  const [form, setForm]           = useState({ ...EMPTY_FORM });
-  const [paquets, setPaquets]     = useState([{ ...EMPTY_PAQUET }]);
+  const [form, setForm]               = useState({ ...EMPTY_FORM });
+  const [paquets, setPaquets]         = useState([{ ...EMPTY_PAQUET }]);
+  const [magatzemComanda, setMagatzemComanda] = useState(null); // { codi_magatzem, nom }
 
-  const magIds    = magFiltrat.map(m => m.codi_magatzem);
-  const magFilter = magIds.length > 0 ? { magatzem_filter: magIds } : {};
+  const magIds    = useMemo(() => magFiltrat.map(m => m.codi_magatzem), [magFiltrat]);
+  const magFilter = useMemo(() => magIds.length > 0 ? { magatzem_filter: magIds } : {}, [magIds]);
+
+  // filtre de magatzem pel formulari: admin tria explícitament, la resta usa el filtre global
+  const formMagFilter = useMemo(() => {
+    if (!isAdmin) return magFilter;
+    return magatzemComanda ? { magatzem_filter: [magatzemComanda.codi_magatzem] } : {};
+  }, [isAdmin, magatzemComanda, magFilter]);
 
   const load = useCallback((params) => {
     setLoading(true);
@@ -103,13 +111,26 @@ export default function PrepararComandes() {
     setForm({ ...EMPTY_FORM });
     setPaquets([{ ...EMPTY_PAQUET }]);
     setFormError('');
+    if (isAdmin) {
+      setMagatzemComanda(magFiltrat.length === 1 ? magFiltrat[0] : null);
+    }
     setModalNova(true);
+  }
+
+  function handleMagatzemComandaChange(mag) {
+    setMagatzemComanda(mag);
+    setPaquets([{ ...EMPTY_PAQUET }]); // reset productes quan canvia el magatzem
   }
 
   async function handleCreate(e) {
     e.preventDefault();
     if (!form.clientObj) { setFormError('Cal seleccionar un client.'); return; }
+    if (isAdmin && !magatzemComanda) { setFormError('Cal seleccionar un magatzem per a la comanda.'); return; }
     if (paquets.some(p => !p.producteObj)) { setFormError('Cal seleccionar producte per a cada línia.'); return; }
+
+    const magComandaId = isAdmin
+      ? magatzemComanda.codi_magatzem
+      : (magFiltrat[0]?.codi_magatzem ?? undefined);
 
     const signe = form.tipus === 'retorn' ? -1 : 1;
     setSaving(true); setFormError('');
@@ -127,7 +148,7 @@ export default function PrepararComandes() {
         client:          clientNif,
         metode_pagament: form.metode_pagament ? parseInt(form.metode_pagament) : null,
         enviament:       form.tipus === 'retorn' ? false : form.enviament,
-        magatzem:        magFiltrat[0]?.codi_magatzem ?? undefined,
+        magatzem:        magComandaId,
         paquets: paquets.map(p => ({
           producte:  p.producteObj.id_producte,
           preu:      parseFloat(p.producteObj.preu),
@@ -478,6 +499,20 @@ export default function PrepararComandes() {
               ))}
             </div>
 
+            {isAdmin && (
+              <Field label="Magatzem" required>
+                <MagatzemComandaAutocomplete
+                  value={magatzemComanda}
+                  onChange={handleMagatzemComandaChange}
+                />
+                {!magatzemComanda && (
+                  <div style={{ fontSize: '0.78rem', color: '#7f8c8d', marginTop: 4 }}>
+                    Cal seleccionar un magatzem abans d'escollir productes.
+                  </div>
+                )}
+              </Field>
+            )}
+
             <Field label="Client" required>
               <ClientAutocomplete
                 value={form.clientObj}
@@ -527,6 +562,8 @@ export default function PrepararComandes() {
                     <label className="login-label" style={{ fontSize: '0.78rem' }}>Producte</label>
                     <ProducteAutocomplete
                       value={p.producteObj}
+                      magFilter={formMagFilter}
+                      disabled={isAdmin && !magatzemComanda}
                       onChange={prod => {
                         const n = [...paquets];
                         n[i] = { ...n[i], producteObj: prod };
@@ -774,8 +811,8 @@ function ClientCreateModal({ onClose, onCreated }) {
   );
 }
 
-// ── ProducteAutocomplete ──────────────────────────────────────────────────────
-function ProducteAutocomplete({ value, onChange, placeholder = 'Cercar producte...' }) {
+// ── MagatzemComandaAutocomplete ───────────────────────────────────────────────
+function MagatzemComandaAutocomplete({ value, onChange, placeholder = 'Cercar magatzem...' }) {
   const [query, setQuery]     = useState('');
   const [open, setOpen]       = useState(false);
   const [options, setOptions] = useState([]);
@@ -792,11 +829,72 @@ function ProducteAutocomplete({ value, onChange, placeholder = 'Cercar producte.
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    getProductes({ cerca: queryDb || undefined })
+    getMagatzems({ cerca: queryDb || undefined })
       .then(res => setOptions(res.data.results ?? res.data))
       .catch(() => setOptions([]))
       .finally(() => setLoading(false));
   }, [queryDb, open]);
+
+  return (
+    <div className="mag-auto" ref={ref}>
+      <div className="mag-auto-wrap">
+        <input
+          className="mag-auto-input"
+          placeholder={value ? `${value.nom} (${value.codi_magatzem})` : placeholder}
+          value={query}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+        />
+        {value && (
+          <button type="button" className="mag-auto-clear"
+            onMouseDown={e => { e.stopPropagation(); onChange(null); setQuery(''); setOpen(false); }}>
+            ✕
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="mag-auto-dropdown">
+          {loading
+            ? <div className="mag-auto-empty">Carregant...</div>
+            : options.length === 0
+              ? <div className="mag-auto-empty">Cap magatzem trobat</div>
+              : options.map(m => (
+                <div key={m.codi_magatzem} className="mag-auto-opt"
+                  onMouseDown={() => { onChange(m); setQuery(''); setOpen(false); }}>
+                  <span className="mag-auto-opt-nom">{m.nom}</span>
+                  <span className="mag-auto-opt-cod text-mono">{m.codi_magatzem}</span>
+                </div>
+              ))
+          }
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ProducteAutocomplete ──────────────────────────────────────────────────────
+function ProducteAutocomplete({ value, onChange, magFilter = {}, disabled = false, placeholder = 'Cercar producte...' }) {
+  const [query, setQuery]     = useState('');
+  const [open, setOpen]       = useState(false);
+  const [options, setOptions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const queryDb = useDebounce(query, 300);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handle(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, []);
+
+  useEffect(() => {
+    if (!open || disabled) return;
+    setLoading(true);
+    getProductes({ cerca: queryDb || undefined, ...magFilter })
+      .then(res => setOptions(res.data.results ?? res.data))
+      .catch(() => setOptions([]))
+      .finally(() => setLoading(false));
+  }, [queryDb, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const displayText = value ? value.nom : '';
 
@@ -804,10 +902,12 @@ function ProducteAutocomplete({ value, onChange, placeholder = 'Cercar producte.
     <div className="mag-auto" ref={ref}>
       <div className="mag-auto-wrap">
         <input className="mag-auto-input"
-          placeholder={displayText || placeholder}
+          placeholder={disabled ? 'Selecciona primer un magatzem' : (displayText || placeholder)}
           value={query}
+          disabled={disabled}
           onChange={e => { setQuery(e.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)} />
+          onFocus={() => { if (!disabled) setOpen(true); }}
+          style={disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined} />
         {value && (
           <button type="button" className="mag-auto-clear"
             onMouseDown={e => { e.stopPropagation(); onChange(null); setQuery(''); setOpen(false); }}>✕</button>
@@ -833,8 +933,15 @@ function ProducteAutocomplete({ value, onChange, placeholder = 'Cercar producte.
 
 // ── PreparacioModal ───────────────────────────────────────────────────────────
 function PreparacioModal({ comanda, magFiltrat, onClose, onDone }) {
-  const magIds = magFiltrat.map(m => m.codi_magatzem);
-  const paquetsPositius = comanda.paquets.filter(p => p.quantitat > 0);
+  // Prioritzem el magatzem de la comanda; si no en té, usem el filtre global
+  const magIds = comanda.magatzem
+    ? [comanda.magatzem]
+    : magFiltrat.map(m => m.codi_magatzem);
+
+  const paquetsPositius  = comanda.paquets.filter(p => p.quantitat > 0);
+  const paquetsNegatitus = comanda.paquets.filter(p => p.quantitat < 0);
+  const esRetorn         = paquetsPositius.length === 0 && paquetsNegatitus.length > 0;
+  const paquetsActius    = esRetorn ? paquetsNegatitus : paquetsPositius;
 
   const [lotsPerIndex, setLotsPerIndex] = useState({});
   const [lotSeleccio, setLotSeleccio]   = useState({});
@@ -843,11 +950,16 @@ function PreparacioModal({ comanda, magFiltrat, onClose, onDone }) {
   const [error, setError]               = useState('');
 
   useEffect(() => {
-    if (paquetsPositius.length === 0) { setLoading(false); return; }
+    if (paquetsActius.length === 0) { setLoading(false); return; }
     Promise.all(
-      paquetsPositius.map((p, i) =>
+      paquetsActius.map((p, i) =>
         getLots({ producte: p.producte, ...(magIds.length > 0 ? { magatzem_filter: magIds } : {}) })
-          .then(res => ({ i, lots: (res.data.results ?? res.data).filter(l => l.quantitat > 0) }))
+          .then(res => {
+            const tots = res.data.results ?? res.data;
+            // Compres: cal estoc > 0. Retorns: qualsevol lot del magatzem (per reposar)
+            const lots = esRetorn ? tots : tots.filter(l => l.quantitat > 0);
+            return { i, lots };
+          })
       )
     ).then(results => {
       const lpi = {};
@@ -863,17 +975,17 @@ function PreparacioModal({ comanda, magFiltrat, onClose, onDone }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleConfirm() {
-    for (let i = 0; i < paquetsPositius.length; i++) {
+    for (let i = 0; i < paquetsActius.length; i++) {
       if (!lotSeleccio[i]) { setError('Cal seleccionar un lot per a cada producte.'); return; }
       const lot = (lotsPerIndex[i] || []).find(l => String(l.id) === lotSeleccio[i]);
-      if (lot && lot.quantitat < paquetsPositius[i].quantitat) {
-        setError(`Estoc insuficient per a "${paquetsPositius[i].producte_nom}": ${lot.quantitat} disponibles, ${paquetsPositius[i].quantitat} necessaris.`);
+      if (!esRetorn && lot && lot.quantitat < Math.abs(paquetsActius[i].quantitat)) {
+        setError(`Estoc insuficient per a "${paquetsActius[i].producte_nom}": ${lot.quantitat} disponibles, ${Math.abs(paquetsActius[i].quantitat)} necessaris.`);
         return;
       }
     }
-    const lotsPayload = paquetsPositius.map((p, i) => ({
-      lot: parseInt(lotSeleccio[i]),
-      quantitat: p.quantitat,
+    const lotsPayload = paquetsActius.map((p, i) => ({
+      lot:      parseInt(lotSeleccio[i]),
+      quantitat: Math.abs(p.quantitat), // sempre positiu; el servei sap si és retorn
     }));
     setSaving(true); setError('');
     try {
@@ -886,27 +998,29 @@ function PreparacioModal({ comanda, magFiltrat, onClose, onDone }) {
   }
 
   return (
-    <Modal title="Preparar comanda" onClose={onClose}>
+    <Modal title={esRetorn ? 'Processar retorn' : 'Preparar comanda'} onClose={onClose}>
       <div className="modal-form">
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: '0.9rem', color: '#5d6d7e', marginBottom: 4 }}>Comanda</div>
           <span className="text-mono" style={{ fontWeight: 700 }}>{comanda.id_comanda}</span>
           <span style={{ marginLeft: 12, color: '#5d6d7e' }}>{comanda.client_nom}</span>
+          {esRetorn && (
+            <span className="badge badge--orange" style={{ marginLeft: 10 }}>🔄 Retorn</span>
+          )}
         </div>
 
         {loading ? (
           <div style={{ padding: '20px 0', textAlign: 'center', color: '#aab4be' }}>Carregant lots...</div>
-        ) : paquetsPositius.length === 0 ? (
-          <div className="alert alert--info">
-            <span>🔄</span>
-            <span>Aquesta comanda és un retorn — no cal seleccionar lots.</span>
-          </div>
+        ) : paquetsActius.length === 0 ? (
+          <div className="alert alert--info"><span>ℹ️</span><span>Sense productes a processar.</span></div>
         ) : (
           <div>
             <div style={{ marginBottom: 12, fontSize: '0.88rem', color: '#5d6d7e' }}>
-              Indica de quin lot s'ha agafat cada producte:
+              {esRetorn
+                ? 'Indica a quin lot es reintegra cada producte retornat:'
+                : 'Indica de quin lot s\'ha agafat cada producte:'}
             </div>
-            {paquetsPositius.map((p, i) => {
+            {paquetsActius.map((p, i) => {
               const lots   = lotsPerIndex[i] || [];
               const selId  = lotSeleccio[i] || '';
               const selLot = lots.find(l => String(l.id) === selId);
@@ -952,9 +1066,9 @@ function PreparacioModal({ comanda, magFiltrat, onClose, onDone }) {
         <div className="modal-actions">
           <button type="button" className="btn-secondary" onClick={onClose}>Cancel·lar</button>
           <button type="button" className="btn-primary"
-            style={{ background: '#27ae60', borderColor: '#27ae60' }}
+            style={{ background: esRetorn ? '#e67e22' : '#27ae60', borderColor: esRetorn ? '#e67e22' : '#27ae60' }}
             disabled={saving || loading} onClick={handleConfirm}>
-            {saving ? 'Preparant...' : '✓ Confirmar preparació'}
+            {saving ? (esRetorn ? 'Processant...' : 'Preparant...') : (esRetorn ? '🔄 Confirmar retorn' : '✓ Confirmar preparació')}
           </button>
         </div>
       </div>

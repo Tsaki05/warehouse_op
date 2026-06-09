@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.db import transaction
 from django.db.models import (
-    Count, Sum, Exists, OuterRef, F,
+    Count, Sum, F,
     ExpressionWrapper, DecimalField,
 )
 from django.db.models.functions import TruncDate
@@ -48,29 +48,44 @@ def crear_comanda(validated_data):
     )
     Paquet.objects.bulk_create([Paquet(comanda=comanda, **p) for p in paquets_data])
     return comanda
+    # Nota: `validated_data` ja porta `magatzem` com a instància FK gràcies a PrimaryKeyRelatedField
 
 
 @transaction.atomic
 def marcar_comanda_preparada(comanda, lots_data, user):
     """
-    Decrementa l'estoc dels lots indicats i marca la comanda com a preparada.
+    Ajusta l'estoc dels lots indicats i marca la comanda com a preparada.
+    - Compres (paquets positius): decrementa l'estoc.
+    - Retorns (paquets negatius): incrementa l'estoc; valida que el lot
+      pertanyi al magatzem de la comanda.
     Usa SELECT FOR UPDATE per evitar race conditions.
-    Aixeca ValueError amb el missatge d'error si alguna validació falla (rollback automàtic).
+    Aixeca ValueError si alguna validació falla (rollback automàtic).
     """
+    es_retorn = comanda.paquets.filter(quantitat__lt=0).exists()
+
     for ld in lots_data:
         try:
-            lot = Lot.objects.select_for_update().get(pk=ld['lot'])
+            lot = Lot.objects.select_related('ubicacio').select_for_update().get(pk=ld['lot'])
         except (Lot.DoesNotExist, KeyError, ValueError, TypeError):
             raise ValueError(f"Lot invàlid: {ld.get('lot')}.")
 
         q = int(ld.get('quantitat', 0))
         if q <= 0:
             raise ValueError('La quantitat ha de ser positiva.')
-        if lot.quantitat < q:
-            raise ValueError(
-                f"Lot {lot.id}: estoc insuficient ({lot.quantitat} disponibles, {q} necessaris)."
-            )
-        lot.quantitat -= q
+
+        if es_retorn:
+            if comanda.magatzem_id and lot.ubicacio.magatzem_id != comanda.magatzem_id:
+                raise ValueError(
+                    f"El lot {lot.id} no pertany al magatzem de la comanda."
+                )
+            lot.quantitat += q
+        else:
+            if lot.quantitat < q:
+                raise ValueError(
+                    f"Lot {lot.id}: estoc insuficient ({lot.quantitat} disponibles, {q} necessaris)."
+                )
+            lot.quantitat -= q
+
         lot.save(update_fields=['quantitat'])
 
     comanda.preparat     = True
@@ -106,24 +121,33 @@ def crear_factura(comandes, metode_pagament=None):
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
+_DASHBOARD_TTL = 5 * 60  # 5 minuts
+
+
 def get_dashboard_data(mag_id):
     """
     Calcula totes les estadístiques del dashboard:
     facturació per dia (30 dies), top 5 clients, ranking treballadors i resum anual.
     Retorna un dict llest per serialitzar com a resposta JSON.
+    Resultat cached 5 minuts per clau de magatzems.
     """
+    from django.core.cache import cache
+    cache_key = 'dashboard:' + (','.join(sorted(mag_id)) if mag_id else 'all')
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
     avui      = date.today()
     inici     = avui - timedelta(days=29)
     inici_any = avui - timedelta(days=364)
 
+    # Quan hi ha filtre de magatzem, usem comanda.magatzem_id (FK directe)
+    # per evitar duplicats causats pel join lots→ubicació→magatzem.
     qs_comandes     = Comanda.objects.filter(data__gte=inici, factura__isnull=False)
     qs_factures     = Factura.objects.filter(data__gte=inici)
     qs_factures_any = Factura.objects.filter(data__gte=inici_any)
 
     if mag_id:
-        qs_comandes = qs_comandes.filter(
-            paquets__producte__lots__ubicacio__magatzem_id__in=mag_id
-        ).distinct()
+        qs_comandes = qs_comandes.filter(magatzem_id__in=mag_id)
 
     dies = [inici + timedelta(days=i) for i in range(30)]
 
@@ -132,19 +156,15 @@ def get_dashboard_data(mag_id):
         output_field=DecimalField(max_digits=14, decimal_places=2),
     )
 
-    lot_en_mag = None
-    if mag_id:
-        lot_en_mag = Lot.objects.filter(
-            producte_id=OuterRef('producte_id'),
-            ubicacio__magatzem_id__in=mag_id,
-        )
-
     # ── Facturació per dia ──
     if mag_id:
         fac_qs = (
             Paquet.objects
-            .filter(comanda__factura__data__gte=inici, comanda__factura__isnull=False)
-            .filter(Exists(lot_en_mag))
+            .filter(
+                comanda__factura__data__gte=inici,
+                comanda__factura__isnull=False,
+                comanda__magatzem_id__in=mag_id,
+            )
             .annotate(dia=TruncDate('comanda__factura__data'))
             .values('dia')
             .annotate(
@@ -177,20 +197,18 @@ def get_dashboard_data(mag_id):
     # ── Top 5 clients ──
     if mag_id:
         top_qs = (
-            Paquet.objects
-            .filter(comanda__data__gte=inici, comanda__factura__isnull=False)
-            .filter(Exists(lot_en_mag))
-            .values('comanda__client_id', 'comanda__client__nom')
+            qs_comandes
+            .values('client_id', 'client__nom')
             .annotate(
-                import_total=Sum(linia_total),
-                n_comandes=Count('comanda_id', distinct=True),
+                import_total=Sum('import_total'),
+                n_comandes=Count('id_comanda', distinct=True),
             )
             .order_by('-import_total')[:5]
         )
         top_clients = [
             {
-                'nif':          r['comanda__client_id'],
-                'nom':          r['comanda__client__nom'],
+                'nif':          r['client_id'],
+                'nom':          r['client__nom'],
                 'n_comandes':   r['n_comandes'],
                 'import_total': float(r['import_total'] or 0),
             }
@@ -214,24 +232,25 @@ def get_dashboard_data(mag_id):
     # ── Ranking treballadors ──
     if mag_id:
         ranking_qs = (
-            Paquet.objects
-            .filter(comanda__preparat=True, comanda__preparat_per__isnull=False,
-                    comanda__factura__isnull=False)
-            .filter(Exists(lot_en_mag))
-            .values('comanda__preparat_per_id', 'comanda__preparat_per__first_name',
-                    'comanda__preparat_per__last_name', 'comanda__preparat_per__username')
-            .annotate(
-                n_comandes=Count('comanda_id', distinct=True),
-                import_total=Sum(linia_total),
+            Comanda.objects
+            .filter(
+                preparat=True, preparat_per__isnull=False,
+                factura__isnull=False, magatzem_id__in=mag_id,
             )
-            .order_by('-import_total')[:10]
+            .values('preparat_per_id', 'preparat_per__first_name',
+                    'preparat_per__last_name', 'preparat_per__username')
+            .annotate(
+                n_comandes=Count('id_comanda', distinct=True),
+                import_total=Sum('import_total'),
+            )
+            .order_by('-import_total')[:5]
         )
         ranking_treballadors = [
             {
-                'id': r['comanda__preparat_per_id'],
+                'id': r['preparat_per_id'],
                 'nom': (
-                    f"{r['comanda__preparat_per__first_name']} {r['comanda__preparat_per__last_name']}".strip()
-                    or r['comanda__preparat_per__username']
+                    f"{r['preparat_per__first_name']} {r['preparat_per__last_name']}".strip()
+                    or r['preparat_per__username']
                 ),
                 'n_comandes':   r['n_comandes'],
                 'import_total': float(r['import_total'] or 0),
@@ -250,7 +269,7 @@ def get_dashboard_data(mag_id):
                 n_comandes=Count('id_comanda', distinct=True),
                 import_total=Sum('import_total'),
             )
-            .order_by('-import_total')[:10]
+            .order_by('-import_total')[:5]
         )
         ranking_treballadors = [
             {
@@ -270,12 +289,15 @@ def get_dashboard_data(mag_id):
 
     if mag_id:
         any_agg = (
-            Paquet.objects
-            .filter(comanda__factura__data__gte=inici_any, comanda__factura__isnull=False)
-            .filter(Exists(lot_en_mag))
+            Comanda.objects
+            .filter(
+                factura__data__gte=inici_any,
+                factura__isnull=False,
+                magatzem_id__in=mag_id,
+            )
             .aggregate(
-                import_total=Sum(linia_total),
-                n=Count('comanda__factura_id', distinct=True),
+                import_total=Sum('import_total'),
+                n=Count('factura_id', distinct=True),
             )
         )
     else:
@@ -291,10 +313,12 @@ def get_dashboard_data(mag_id):
         'n_factures_any':       any_agg['n'] or 0,
     }
 
-    return {
+    result = {
         'facturacio_mes':       facturacio_mes,
         'top_clients':          top_clients,
         'ranking_treballadors': ranking_treballadors,
         'resum':                resum,
     }
+    cache.set(cache_key, result, _DASHBOARD_TTL)
+    return result
 

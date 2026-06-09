@@ -30,7 +30,18 @@ class LoginView(APIView):
         if not username or not password:
             return Response({'detail': 'Cal introduir usuari i contrasenya.'},
                             status=status.HTTP_400_BAD_REQUEST)
+        if len(username) > 150:
+            return Response({'detail': 'Nom d\'usuari massa llarg.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if len(password) > 128:
+            return Response({'detail': 'Contrasenya massa llarga.'},
+                            status=status.HTTP_400_BAD_REQUEST)
         user = authenticate(request, username=username, password=password)
+        if getattr(request, 'axes_locked_out', False):
+            return Response(
+                {'detail': 'Massa intents fallits. Torna-ho a intentar en un minut.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
         if user is None:
             return Response({'detail': 'Usuari o contrasenya incorrectes.'},
                             status=status.HTTP_401_UNAUTHORIZED)

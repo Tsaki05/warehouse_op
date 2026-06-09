@@ -51,13 +51,8 @@ def compute_mag_stats(clients, allowed_mags=None):
 
     pairs = (
         Comanda.objects
-        .filter(client_id__in=client_ids)
-        .values(
-            'id_comanda', 'client_id', 'import_total',
-            mag=F('paquets__producte__lots__ubicacio__magatzem_id'),
-        )
-        .distinct()
-        .filter(mag__isnull=False)
+        .filter(client_id__in=client_ids, magatzem_id__isnull=False)
+        .values('client_id', 'import_total', mag=F('magatzem_id'))
     )
 
     if allowed_mags is not None:
